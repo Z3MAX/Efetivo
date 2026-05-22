@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Efetivo RTT (Flask)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["app.py"],
+      "port": 5000
+    },
+    {
+      "name": "Sync Ponto (Abril 2026)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["sync_ponto.py", "--mes", "4", "--ano", "2026"],
+      "port": 5000
+    }
+  ]
+}

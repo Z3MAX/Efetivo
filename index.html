@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Efetivo RTT</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* ─── Reset & Base ─── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f5f5f3;
+  --bg-card: #ffffff;
+  --bg-side: #1a1a2e;
+  --bg-side-hover: #16213e;
+  --bg-side-active: #0f3460;
+  --text: #1a1a1a;
+  --text-muted: #6b7280;
+  --text-side: #c8cfd8;
+  --text-side-active: #ffffff;
+  --border: #e5e7eb;
+  --accent: #185FA5;
+  --accent-light: #e6f1fb;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
+
+  /* Badge colors */
+  --b-ponto-bg: #C0DD97; --b-ponto-c: #27500A;
+  --b-manual-bg: #B5D4F4; --b-manual-c: #0C447C;
+  --b-nc-bg: #e5e7eb; --b-nc-c: #6b7280;
+  --b-sp-bg: #CECBF6; --b-sp-c: #3C3489;
+  --b-fer-bg: #9FE1CB; --b-fer-c: #085041;
+  --b-aus-bg: #F4C0D1; --b-aus-c: #72243E;
+  --b-he-bg: #FAC775; --b-he-c: #633806;
+  --b-fds-bg: #dbeafe; --b-fds-c: #1e40af;
+  --b-el-bg: #fef3c7; --b-el-c: #92400e;
+  --b-ncv-bg: #fee2e2; --b-ncv-c: #991b1b;
+  --b-af-bg: #ede9fe; --b-af-c: #5b21b6;
+  --b-ab-bg: #fef9c3; --b-ab-c: #854d0e;
+  --b-plus-bg: transparent; --b-plus-c: #9ca3af;
+  --b-int-bg: #fef9c3; --b-int-c: #92400e;
+}
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: var(--text); background: var(--bg); }
+
+/* ─── Layout ─── */
+.app { display: flex; height: 100vh; overflow: hidden; }
+
+/* ─── Sidebar ─── */
+.sidebar {
+  width: 220px; flex-shrink: 0;
+  background: var(--bg-side);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-brand {
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.sidebar-brand .name { font-size: 16px; font-weight: 600; color: #fff; letter-spacing: -0.01em; }
+.sidebar-brand .name span { color: #60a5fa; }
+.sidebar-brand .sub { font-size: 11px; color: var(--text-side); margin-top: 2px; opacity: 0.7; }
+.sidebar-nav { flex: 1; padding: 8px 0; overflow-y: auto; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 16px; cursor: pointer;
+  color: var(--text-side); font-size: 13px;
+  border-left: 3px solid transparent;
+  transition: all 0.15s;
+  user-select: none;
+}
+.nav-item:hover { background: var(--bg-side-hover); color: #fff; }
+.nav-item.active {
+  background: var(--bg-side-active);
+  color: var(--text-side-active);
+  border-left-color: #60a5fa;
+}
+.nav-item svg { width: 16px; height: 16px; flex-shrink: 0; opacity: 0.8; }
+.nav-item.active svg { opacity: 1; }
+.nav-section {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: rgba(255,255,255,0.3); padding: 12px 16px 4px; font-weight: 500;
+}
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 11px; color: rgba(255,255,255,0.4);
+}
+.sidebar-footer .user-email { color: rgba(255,255,255,0.6); margin-bottom: 4px; }
+
+/* ─── Main ─── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+/* ─── Topbar ─── */
+.topbar {
+  background: var(--bg-card); border-bottom: 1px solid var(--border);
+  padding: 0 20px; height: 52px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-title { font-size: 15px; font-weight: 500; }
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+.topbar-select {
+  font-size: 13px; border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 5px 28px 5px 10px;
+  background: var(--bg); color: var(--text); cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center;
+}
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: var(--radius);
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  border: 1px solid transparent; transition: all 0.15s;
+}
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover { background: #0f4a8a; }
+.btn-outline { background: var(--bg-card); color: var(--text); border-color: var(--border); }
+.btn-outline:hover { background: var(--bg); }
+.btn-ghost { background: transparent; color: var(--text-muted); border-color: transparent; }
+.btn-ghost:hover { background: var(--bg); color: var(--text); }
+.btn-danger { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.btn-danger:hover { background: #fecaca; }
+.btn-success { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+.btn-success:hover { background: #a7f3d0; }
+.btn svg { width: 14px; height: 14px; }
+
+/* ─── Content area ─── */
+.content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 20px; }
+
+/* ─── Cards ─── */
+.card {
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-header {
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-title { font-size: 13px; font-weight: 500; }
+.card-body { padding: 16px; }
+
+/* ─── Metric cards ─── */
+.metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.metric-card {
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  padding: 14px 16px;
+}
+.metric-label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.metric-value { font-size: 26px; font-weight: 600; color: var(--text); line-height: 1; margin-bottom: 4px; }
+.metric-sub { font-size: 11px; color: var(--text-muted); }
+.metric-trend { font-size: 11px; font-weight: 500; }
+.metric-trend.up { color: #059669; }
+.metric-trend.down { color: #dc2626; }
+
+/* ─── Charts grid ─── */
+.charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px; }
+.chart-wrap { position: relative; height: 220px; }
+
+/* ─── Filters bar ─── */
+.filters-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 16px; background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.filters-bar label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+.search-input {
+  padding: 5px 10px 5px 30px; border-radius: var(--radius);
+  border: 1px solid var(--border); font-size: 12px; background: var(--bg-card);
+  color: var(--text); width: 180px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: 8px center;
+}
+.filter-select {
+  font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 5px 24px 5px 8px; background: var(--bg-card); color: var(--text); cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 6px center;
+}
+.filters-right { margin-left: auto; display: flex; gap: 6px; }
+.badge-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-light); color: var(--accent);
+  font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+  min-width: 20px;
+}
+
+/* ─── Grade table ─── */
+.grade-wrap { overflow: auto; max-height: calc(100vh - 280px); }
+.grade-table { border-collapse: collapse; font-size: 11px; min-width: max-content; width: 100%; }
+.grade-table th {
+  background: #f9fafb; color: var(--text-muted); font-weight: 500;
+  padding: 6px 5px; text-align: center;
+  border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+  white-space: nowrap; position: sticky; top: 0; z-index: 2;
+}
+.grade-table th.col-name {
+  text-align: left; padding-left: 12px; min-width: 160px;
+  position: sticky; left: 0; z-index: 4; border-right: 2px solid var(--border);
+}
+.grade-table th.col-func { min-width: 100px; text-align: left; padding-left: 8px; position: sticky; left: 160px; z-index: 3; }
+.grade-table th.col-fte { min-width: 54px; position: sticky; right: 0; z-index: 3; background: #f0f9ff; }
+.grade-table th.weekend { color: #9ca3af; }
+.grade-table td {
+  padding: 3px 4px; text-align: center;
+  border-bottom: 1px solid #f3f4f6; border-right: 1px solid #f3f4f6;
+}
+.grade-table td.col-name {
+  text-align: left; padding-left: 12px; background: var(--bg-card);
+  position: sticky; left: 0; z-index: 1; border-right: 2px solid var(--border);
+  white-space: nowrap; font-size: 11px;
+}
+.grade-table td.col-func {
+  text-align: left; padding-left: 8px; background: var(--bg-card);
+  position: sticky; left: 160px; z-index: 1; font-size: 10px; color: var(--text-muted);
+  border-right: 1px solid var(--border); white-space: nowrap;
+}
+.grade-table td.col-fte {
+  font-weight: 600; color: var(--accent); background: #f0f9ff;
+  position: sticky; right: 0; z-index: 1;
+}
+.grade-table tbody tr:hover td { background: #f9fafb !important; }
+.grade-table tbody tr:hover td.col-fte { background: #e0f2fe !important; }
+.grade-table .row-total td {
+  background: #eff6ff !important; font-weight: 600; font-size: 11px;
+  border-top: 2px solid #bfdbfe;
+}
+.grade-table .row-total td.col-fte { background: #dbeafe !important; color: var(--accent); }
+
+/* ─── Badge ─── */
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 4px; font-size: 10px; font-weight: 600;
+  padding: 2px 5px; cursor: pointer; line-height: 1.3;
+  transition: opacity 0.1s; white-space: nowrap; min-width: 22px;
+}
+.badge:hover { opacity: 0.82; }
+.badge-ponto { background: var(--b-ponto-bg); color: var(--b-ponto-c); }
+.badge-manual { background: var(--b-manual-bg); color: var(--b-manual-c); }
+.badge-nc { background: var(--b-nc-bg); color: var(--b-nc-c); cursor: default; }
+.badge-sp { background: var(--b-sp-bg); color: var(--b-sp-c); cursor: default; }
+.badge-fer { background: var(--b-fer-bg); color: var(--b-fer-c); cursor: default; }
+.badge-aus { background: var(--b-aus-bg); color: var(--b-aus-c); cursor: default; }
+.badge-he { background: var(--b-he-bg); color: var(--b-he-c); }
+.badge-fds { background: var(--b-fds-bg); color: var(--b-fds-c); cursor: default; }
+.badge-el { background: var(--b-el-bg); color: var(--b-el-c); }
+.badge-ncv { background: var(--b-ncv-bg); color: var(--b-ncv-c); cursor: default; }
+.badge-af { background: var(--b-af-bg); color: var(--b-af-c); cursor: default; }
+.badge-ab { background: var(--b-ab-bg); color: var(--b-ab-c); }
+.badge-plus { background: var(--b-plus-bg); color: var(--b-plus-c); border: 1px dashed #d1d5db; }
+.badge-int { display: inline-block; font-size: 9px; background: var(--b-int-bg); color: var(--b-int-c); border-radius: 3px; padding: 0 3px; margin-left: 2px; }
+.badge-status { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; }
+.badge-open { background: #fef9c3; color: #854d0e; }
+.badge-closed { background: #d1fae5; color: #065f46; }
+
+/* ─── Legend ─── */
+.legend {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px 16px; border-top: 1px solid var(--border);
+  background: #fafafa;
+}
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-muted); }
+
+/* ─── Modal ─── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+.modal {
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+  width: 360px; max-width: 95vw; overflow: hidden;
+}
+.modal-header {
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-title { font-size: 14px; font-weight: 500; }
+.modal-body { padding: 16px; }
+.modal-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+.form-group { margin-bottom: 14px; }
+.form-label { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 5px; display: block; }
+.form-select, .form-input {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 13px; color: var(--text);
+  background: var(--bg); outline: none;
+}
+.form-select:focus, .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(24,95,165,0.12); }
+
+/* ─── Table (admin) ─── */
+.table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.table th {
+  text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border);
+  color: var(--text-muted); font-weight: 500; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.04em; background: #f9fafb;
+}
+.table td { padding: 9px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+.table tbody tr:hover td { background: #f9fafb; }
+.table .editable { cursor: pointer; }
+.table .editable:hover { background: var(--accent-light); border-radius: 4px; }
+.pill {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 600;
+}
+.pill-blue { background: #dbeafe; color: #1e40af; }
+.pill-gray { background: #f3f4f6; color: #4b5563; }
+.pill-red { background: #fee2e2; color: #991b1b; }
+.pill-green { background: #d1fae5; color: #065f46; }
+
+/* ─── Empty state ─── */
+.empty-state { text-align: center; padding: 48px 20px; color: var(--text-muted); }
+.empty-state svg { width: 40px; height: 40px; margin: 0 auto 12px; opacity: 0.3; display: block; }
+.empty-state p { font-size: 13px; }
+
+/* ─── Toast ─── */
+#toast {
+  position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+  background: #1a1a1a; color: #fff; padding: 10px 16px; border-radius: var(--radius);
+  font-size: 13px; box-shadow: var(--shadow-md);
+  transform: translateY(60px); opacity: 0; transition: all 0.25s;
+  max-width: 300px;
+}
+#toast.show { transform: translateY(0); opacity: 1; }
+#toast.success { background: #065f46; }
+#toast.error { background: #991b1b; }
+
+/* ─── Sync status ─── */
+.sync-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 16px; background: #f0f9ff; border-bottom: 1px solid #bfdbfe;
+  font-size: 11px; color: #1e40af;
+}
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+
+/* ─── Section titles ─── */
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.section-title-lg { font-size: 16px; font-weight: 600; }
+
+/* ─── Tabs dentro de card ─── */
+.inner-tabs { display: flex; gap: 2px; padding: 12px 16px 0; }
+.inner-tab {
+  font-size: 12px; padding: 6px 14px; border-radius: 6px 6px 0 0;
+  cursor: pointer; color: var(--text-muted);
+  border: 1px solid transparent; border-bottom: none;
+  background: transparent;
+}
+.inner-tab.active { background: var(--bg-card); color: var(--accent); border-color: var(--border); font-weight: 500; }
+
+/* ─── Print ─── */
+@media print {
+  .sidebar, .topbar, .filters-bar, .legend, .btn, .nav-item { display: none !important; }
+  .content { padding: 0; }
+  .grade-wrap { max-height: none; overflow: visible; }
+  .grade-table th, .grade-table td { font-size: 8px; padding: 2px 3px; }
+  @page { size: A3 landscape; margin: 10mm; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ─── Sidebar ─── -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="name"><span>Efetivo</span> RTT</div>
+    <div class="sub">Controle de presença &amp; FTE</div>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-section">Principal</div>
+    <div class="nav-item active" data-view="dashboard" onclick="navigate('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item" data-view="grade" onclick="navigate('grade')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Grade de Presença
+    </div>
+    <div class="nav-item" data-view="export" onclick="navigate('export')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Exportação
+    </div>
+    <div class="nav-section">Configuração</div>
+    <div class="nav-item" data-view="admin" onclick="navigate('admin')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
+      Relógios &amp; Projetos
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <div class="user-email" id="user-email">thiego.silva@rttshop.com.br</div>
+    <div>RTT Soluções Industriais</div>
+  </div>
+</nav>
+
+<!-- ─── Main ─── -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-title" id="topbar-title">Dashboard</span>
+    </div>
+    <div class="topbar-right">
+      <select class="topbar-select" id="sel-mes-top" onchange="onMesChange()">
+        <option value="5-2026">Maio / 2026</option>
+        <option value="4-2026" selected>Abril / 2026</option>
+        <option value="3-2026">Março / 2026</option>
+        <option value="2-2026">Fevereiro / 2026</option>
+        <option value="1-2026">Janeiro / 2026</option>
+      </select>
+      <select class="topbar-select" id="sel-proj-top" onchange="onProjChange()">
+        <option value="all">Todos os projetos</option>
+        <option value="183">183 — REVAP</option>
+        <option value="208">208 — REFAP</option>
+        <option value="43">43 — S11D</option>
+        <option value="159">159 — Porto Norte</option>
+        <option value="194">194 — Transpetro Suape</option>
+        <option value="141">141 — Ultracargo Suape</option>
+        <option value="225">225 — Hydro Alunorte</option>
+        <option value="214">214 — Brava RN</option>
+        <option value="74">74 — CSN UPV Mecânica</option>
+        <option value="135">135 — CSN UPV Vulcanização</option>
+        <option value="131">131 — CSN UPV Despoeiramento</option>
+      </select>
+      <button class="btn btn-outline" onclick="syncTotvs()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Sincronizar
+      </button>
+      <button class="btn btn-primary" onclick="fecharMes()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        Fechar Mês
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Views ─── -->
+  <div class="content" id="content-area">
+    <!-- Rendered by JS -->
+  </div>
+</div>
+
+</div>
+
+<!-- ─── Modal edição presença ─── -->
+<div class="modal-overlay" id="modal-presenca" style="display:none" onclick="closeModal('modal-presenca')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-presenca-title">Editar presença</span>
+      <button class="btn btn-ghost" style="padding:4px" onclick="closeModal('modal-presenca')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Colaborador</label>
+        <input class="form-input" id="modal-func-name" readonly style="background:#f9fafb">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data</label>
+        <input class="form-input" id="modal-data" readonly style="background:#f9fafb">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo de registro</label>
+        <select class="form-select" id="modal-tipo">
+          <option value="">Sem registro (+)</option>
+          <option value="ponto">Ponto eletrônico</option>
+          <option value="manual">Presença manual</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-presenca')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarPresenca()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Modal editar relógio ─── -->
+<div class="modal-overlay" id="modal-relogio" style="display:none" onclick="closeModal('modal-relogio')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">Mapear relógio ao projeto</span>
+      <button class="btn btn-ghost" style="padding:4px" onclick="closeModal('modal-relogio')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Relógio</label>
+        <input class="form-input" id="modal-rel-id" readonly style="background:#f9fafb">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descrição atual</label>
+        <input class="form-input" id="modal-rel-desc" readonly style="background:#f9fafb">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Projeto destino</label>
+        <select class="form-select" id="modal-rel-proj">
+          <option value="">— Sem projeto —</option>
+          <option value="183">183 — Petrobras REVAP</option>
+          <option value="208">208 — Petrobras REFAP</option>
+          <option value="43">43 — Vale S11D</option>
+          <option value="159">159 — Vale Porto Norte</option>
+          <option value="194">194 — Transpetro Suape</option>
+          <option value="141">141 — Ultracargo Suape</option>
+          <option value="225">225 — Hydro Alunorte</option>
+          <option value="214">214 — Brava RN</option>
+          <option value="74">74 — CSN UPV Mecânica</option>
+          <option value="135">135 — CSN UPV Vulcanização</option>
+          <option value="131">131 — CSN UPV Despoeiramento</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-relogio')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarRelogio()">Salvar mapeamento</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Toast ─── -->
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   ESTADO GLOBAL
+═══════════════════════════════════════════════════════ */
+const API = '';  // mesma origem Flask
+let currentView = 'dashboard';
+let selectedMes = 4, selectedAno = 2026;
+let selectedProj = 'all';
+let gradeData = { funcionarios: [], presencas: [], abonos: [], ausencias: [] };
+let filterSearch = '';
+let filterSituacao = '';
+let editTarget = null;
+
+const PROJETOS = {
+  '183': 'Petrobras REVAP', '208': 'Petrobras REFAP',
+  '43': 'Vale S11D', '159': 'Vale Porto Norte',
+  '194': 'Transpetro Suape', '141': 'Ultracargo Suape',
+  '225': 'Hydro Alunorte', '214': 'Brava RN',
+  '74': 'CSN UPV Mecânica', '135': 'CSN UPV Vulcanização', '131': 'CSN UPV Despoeiramento'
+};
+
+const ABONO_CUSTO = ['21','04','11','40','41','43','44'];
+
+/* ═══════════════════════════════════════════════════════
+   API
+═══════════════════════════════════════════════════════ */
+async function apiFetch(path) {
+  try {
+    const r = await fetch(API + path);
+    if (!r.ok) throw new Error(r.statusText);
+    return await r.json();
+  } catch(e) {
+    return null;
+  }
+}
+
+async function apiPost(path, body) {
+  try {
+    const r = await fetch(API + path, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   NAVEGAÇÃO
+═══════════════════════════════════════════════════════ */
+function navigate(view) {
+  currentView = view;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.view === view);
+  });
+  const titles = { dashboard:'Dashboard', grade:'Grade de Presença', export:'Exportação', admin:'Relógios & Projetos' };
+  document.getElementById('topbar-title').textContent = titles[view] || view;
+  renderView();
+}
+
+function onMesChange() {
+  const v = document.getElementById('sel-mes-top').value.split('-');
+  selectedMes = parseInt(v[0]); selectedAno = parseInt(v[1]);
+  renderView();
+}
+
+function onProjChange() {
+  selectedProj = document.getElementById('sel-proj-top').value;
+  renderView();
+}
+
+/* ═══════════════════════════════════════════════════════
+   UTILITÁRIOS
+═══════════════════════════════════════════════════════ */
+function diasDoMes(mes, ano) {
+  return new Date(ano, mes, 0).getDate();
+}
+function diaSemana(d, mes, ano) { return new Date(ano, mes-1, d).getDay(); }
+const SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+function diasUteis(mes, ano) {
+  let count = 0;
+  const total = diasDoMes(mes, ano);
+  for(let d = 1; d <= total; d++) {
+    const wd = diaSemana(d, mes, ano);
+    if(wd !== 0 && wd !== 6) count++;
+  }
+  return count;
+}
+
+function isWeekend(d, mes, ano) {
+  const wd = diaSemana(d, mes, ano);
+  return wd === 0 || wd === 6;
+}
+
+function nomeMes(mes) {
+  return ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][mes];
+}
+
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'toast show ' + type;
+  setTimeout(() => el.className = 'toast', 3000);
+}
+
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+/* ═══════════════════════════════════════════════════════
+   CÁLCULO DE BADGE
+═══════════════════════════════════════════════════════ */
+function calcBadge(matricula, day, mes, ano, func, presencas, abonos, ausencias, admissao, demissao, situacao) {
+  const isFds = isWeekend(day, mes, ano);
+  const dataStr = `${ano}-${String(mes).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+
+  // NC: antes admissão ou após demissão
+  if(admissao && dataStr < admissao) return {cls:'badge-nc', txt:'NC', fte:false};
+  if(demissao && dataStr > demissao) return {cls:'badge-nc', txt:'NC', fte:false};
+
+  // Ausência INSS/licença
+  const ausente = ausencias.find(a => a.matricula === matricula && dataStr >= a.dt_inicio && dataStr <= (a.dt_fim||'2099-12-31'));
+  if(ausente) return {cls:'badge-aus', txt:'AUS', fte:false};
+
+  // Abono
+  const abono = abonos.find(a => a.matricula === matricula && a.data === dataStr);
+  if(abono) {
+    if(['21','04','11','40','41','43','44'].includes(String(abono.cod_abono)))
+      return {cls:'badge-ab', txt:'AB', fte:true};
+    return {cls:'badge-ncv', txt:'NCV', fte:false};
+  }
+
+  // Ponto/presença registrada
+  const pres = presencas.find(p => p.matricula === matricula && p.data === dataStr);
+  if(pres) {
+    if(isFds) return {cls:'badge-he', txt:'HE', fte:true};
+    if(pres.fonte === 'manual') return {cls:'badge-manual', txt:'✓', fte:true};
+    return {cls:'badge-ponto', txt:'✓', fte:true};
+  }
+
+  if(isFds) return {cls:'badge-fds', txt:'FDS', fte:true};
+
+  // SP: coordenador/gerente sem ponto
+  const fUpper = (func||'').toUpperCase();
+  if(fUpper.startsWith('COORD') || fUpper.startsWith('GER')) return {cls:'badge-sp', txt:'SP', fte:true};
+
+  // Férias
+  if(situacao === 'Ferias') return {cls:'badge-fer', txt:'FER', fte:true};
+
+  // EL: ativo não-intermitente sem evento
+  if(situacao !== 'Intermitente') return {cls:'badge-el', txt:'EL', fte:true};
+
+  // Sem registro
+  return {cls:'badge-plus', txt:'+', fte:false};
+}
+
+function calcFteFunc(matricula, mes, ano, func, presencas, abonos, ausencias, admissao, demissao, situacao) {
+  const total = diasDoMes(mes, ano);
+  const uteis = diasUteis(mes, ano);
+  let soma = 0;
+  const hoje = new Date();
+  for(let d = 1; d <= total; d++) {
+    const b = calcBadge(matricula, d, mes, ano, func, presencas, abonos, ausencias, admissao, demissao, situacao);
+    if(b.fte) soma += 1/uteis;
+  }
+  return (soma * uteis);
+}
+
+/* ═══════════════════════════════════════════════════════
+   VIEW: DASHBOARD
+═══════════════════════════════════════════════════════ */
+const FTE_DATA = {
+  '4-2026': { projetos: [
+    {cod:'183', nome:'REVAP', hc:312, fte:292.2},
+    {cod:'208', nome:'REFAP', hc:502, fte:482.7},
+    {cod:'43', nome:'S11D', hc:217, fte:200.2},
+    {cod:'159', nome:'Porto Norte', hc:162, fte:122.1},
+    {cod:'194', nome:'Transpetro', hc:132, fte:121.8},
+    {cod:'141', nome:'Ultracargo', hc:87, fte:79.4},
+    {cod:'225', nome:'Hydro', hc:64, fte:57.1},
+    {cod:'214', nome:'Brava RN', hc:43, fte:38.6},
+    {cod:'74', nome:'CSN Mecânica', hc:52, fte:47.3},
+    {cod:'135', nome:'CSN Vulcan.', hc:38, fte:35.2},
+    {cod:'131', nome:'CSN Despoei.', hc:31, fte:28.4},
+  ]},
+  '3-2026': { projetos: [
+    {cod:'183', nome:'REVAP', hc:305, fte:281.6},
+    {cod:'208', nome:'REFAP', hc:490, fte:462.1},
+    {cod:'43', nome:'S11D', hc:210, fte:193.7},
+    {cod:'159', nome:'Porto Norte', hc:158, fte:117.3},
+    {cod:'194', nome:'Transpetro', hc:128, fte:116.9},
+    {cod:'141', nome:'Ultracargo', hc:82, fte:75.6},
+    {cod:'225', nome:'Hydro', hc:61, fte:54.3},
+    {cod:'214', nome:'Brava RN', hc:41, fte:36.4},
+  ]},
+};
+
+let chartInstances = {};
+
+function destroyChart(id) {
+  if(chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+}
+
+function renderDashboard() {
+  const key = `${selectedMes}-${selectedAno}`;
+  const data = FTE_DATA[key] || FTE_DATA['4-2026'];
+  let projs = data.projetos;
+  if(selectedProj !== 'all') projs = projs.filter(p => p.cod === selectedProj);
+
+  const totalHC = projs.reduce((s,p) => s+p.hc, 0);
+  const totalFTE = projs.reduce((s,p) => s+p.fte, 0);
+  const util = totalHC > 0 ? (totalFTE/totalHC*100).toFixed(1) : 0;
+  const uteis = diasUteis(selectedMes, selectedAno);
+
+  const html = `
+  <div class="sync-bar">
+    <div class="sync-dot"></div>
+    Última sincronização TOTVS: hoje às 08:14 &nbsp;|&nbsp; ${nomeMes(selectedMes)} / ${selectedAno} &nbsp;|&nbsp; ${uteis} dias úteis
+  </div>
+  <div style="padding:20px">
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">HC Total</div>
+        <div class="metric-value">${totalHC.toLocaleString('pt-BR')}</div>
+        <div class="metric-sub">${projs.length} projeto${projs.length>1?'s':''}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">FTE do Mês</div>
+        <div class="metric-value">${totalFTE.toFixed(1).replace('.',',')}</div>
+        <div class="metric-sub">referência ${nomeMes(selectedMes)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Utilização</div>
+        <div class="metric-value">${util.replace('.',',')}%</div>
+        <div class="metric-sub metric-trend ${parseFloat(util)>=90?'up':'down'}">${parseFloat(util)>=90?'▲ Acima da meta':'▼ Abaixo da meta'}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Dias Úteis</div>
+        <div class="metric-value">${uteis}</div>
+        <div class="metric-sub">${diasDoMes(selectedMes,selectedAno)} dias no mês</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Evolução diária da presença — ${nomeMes(selectedMes)} / ${selectedAno}</span>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap"><canvas id="chart-linha"></canvas></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">FTE por projeto</span>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap"><canvas id="chart-barra"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Resumo por projeto — ${nomeMes(selectedMes)} / ${selectedAno}</span>
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Projeto</th><th>HC</th><th>FTE</th><th>Utilização</th><th>Dias úteis</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${projs.map(p => {
+            const u = (p.fte/p.hc*100).toFixed(1);
+            const cor = parseFloat(u) >= 90 ? '#059669' : parseFloat(u) >= 75 ? '#d97706' : '#dc2626';
+            return `<tr>
+              <td><span class="pill pill-blue">${p.cod}</span> <strong>${p.nome}</strong></td>
+              <td>${p.hc}</td>
+              <td><strong>${p.fte.toFixed(1).replace('.',',')}</strong></td>
+              <td><div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;height:6px;background:#f3f4f6;border-radius:3px;overflow:hidden">
+                  <div style="height:100%;width:${u}%;background:${cor};border-radius:3px"></div>
+                </div>
+                <span style="font-size:11px;font-weight:600;color:${cor};min-width:38px">${u.replace('.',',')}%</span>
+              </div></td>
+              <td>${uteis}</td>
+              <td><span class="badge-status badge-closed">Fechado</span></td>
+            </tr>`;
+          }).join('')}
+          <tr style="background:#f9fafb;font-weight:600">
+            <td>Total empresa</td>
+            <td>${totalHC.toLocaleString('pt-BR')}</td>
+            <td>${totalFTE.toFixed(1).replace('.',',')}</td>
+            <td><span style="font-size:12px;font-weight:700;color:${parseFloat(util)>=90?'#059669':'#d97706'}">${util.replace('.',',')}%</span></td>
+            <td>${uteis}</td><td>—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+
+  document.getElementById('content-area').innerHTML = html;
+
+  // Charts
+  setTimeout(() => {
+    destroyChart('linha'); destroyChart('barra');
+
+    // Linha: presença acumulada simulada por dia
+    const total = diasDoMes(selectedMes, selectedAno);
+    const labels = []; const vals = [];
+    for(let d = 1; d <= total; d++) {
+      if(!isWeekend(d, selectedMes, selectedAno)) {
+        labels.push(`${d}/${selectedMes}`);
+        const base = totalFTE / diasUteis(selectedMes, selectedAno);
+        vals.push(+(base * (0.88 + Math.random()*0.18)).toFixed(1));
+      }
+    }
+
+    const ctxL = document.getElementById('chart-linha');
+    if(ctxL) chartInstances['linha'] = new Chart(ctxL, {
+      type: 'line',
+      data: { labels, datasets: [{
+        label: 'Presentes / dia', data: vals,
+        borderColor: '#185FA5', backgroundColor: 'rgba(24,95,165,0.08)',
+        borderWidth: 2, pointRadius: 2, fill: true, tension: 0.3
+      }]},
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+        scales: { y:{beginAtZero:false, grid:{color:'#f3f4f6'}}, x:{grid:{display:false}} }}
+    });
+
+    // Barra: FTE por projeto
+    const ctxB = document.getElementById('chart-barra');
+    if(ctxB) chartInstances['barra'] = new Chart(ctxB, {
+      type: 'bar',
+      data: {
+        labels: projs.map(p=>p.nome),
+        datasets: [{
+          label: 'FTE', data: projs.map(p=>p.fte),
+          backgroundColor: '#185FA5', borderRadius: 4, borderSkipped: false
+        },{
+          label: 'HC', data: projs.map(p=>p.hc),
+          backgroundColor: '#e5e7eb', borderRadius: 4, borderSkipped: false
+        }]
+      },
+      options: {
+        indexAxis: 'y', responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom', labels:{font:{size:10}}}},
+        scales:{ x:{grid:{color:'#f3f4f6'}}, y:{grid:{display:false}} }
+      }
+    });
+  }, 50);
+}
+
+/* ═══════════════════════════════════════════════════════
+   VIEW: GRADE
+═══════════════════════════════════════════════════════ */
+const FUNCS_EX = ['SERRALHEIRO','MONTADOR','COORD MONTAGEM','SOLDADOR','GER OPERAÇÕES','ELETRICISTA','PINTOR','AUX MONTAGEM','INSPETOR','CALDEIREIRO'];
+const NAMES_EX = ['ALEX SANTOS','CARLOS MENEZES','RODRIGO LIMA','FERNANDA COSTA','PAULO ANDRADE','JULIO FERREIRA','MARCELO SILVA','ADRIANA ROCHA','LEANDRO NUNES','THIAGO PEREIRA','FABIO CARVALHO','RENATA GOMES','WAGNER SOUSA','LUCIANA MARTINS','DIEGO ALVES','CINTIA BORGES','RAFAEL DUARTE','PATRICIA LIMA','VITOR SANTOS','ELAINE SOUZA'];
+
+function getExampleFuncionarios(proj) {
+  const hcMap = {'183':18,'208':22,'43':14,'159':10,'194':9,'141':7,'225':6,'214':5,'74':6,'135':5,'131':4,'all':20};
+  const n = hcMap[proj] || 12;
+  const funcs = [];
+  for(let i = 0; i < n; i++) {
+    funcs.push({
+      matricula: String(10000+i+parseInt(proj==='all'?0:proj)),
+      nome: NAMES_EX[i % NAMES_EX.length] + (i >= NAMES_EX.length ? ` ${Math.floor(i/NAMES_EX.length)+1}` : ''),
+      funcao: FUNCS_EX[i % FUNCS_EX.length],
+      situacao: i===3?'Ferias':i===7?'Intermitente':'Ativo',
+      dt_admissao: '2023-01-15', dt_demissao: null,
+      codigo_projeto: proj === 'all' ? ['183','208','43'][i%3] : proj
+    });
+  }
+  return funcs;
+}
+
+function getExamplePresencas(funcs, mes, ano) {
+  const pres = [];
+  const total = diasDoMes(mes, ano);
+  for(const f of funcs) {
+    for(let d = 1; d <= total; d++) {
+      const wd = diaSemana(d, mes, ano);
+      const r = Math.random();
+      if(wd !== 0 && wd !== 6 && r < 0.75 && !f.funcao.startsWith('COORD') && !f.funcao.startsWith('GER') && f.situacao!=='Ferias') {
+        pres.push({
+          matricula: f.matricula,
+          data: `${ano}-${String(mes).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
+          fonte: r < 0.05 ? 'manual' : 'ponto'
+        });
+      }
+      if((wd === 0 || wd === 6) && Math.random() < 0.05) {
+        pres.push({
+          matricula: f.matricula,
+          data: `${ano}-${String(mes).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
+          fonte: 'ponto'
+        });
+      }
+    }
+  }
+  return pres;
+}
+
+async function loadGradeData() {
+  // Tenta API, fallback para dados exemplo
+  let funcs = await apiFetch(`/api/funcionarios?mes=${selectedMes}&ano=${selectedAno}${selectedProj!=='all'?'&projeto='+selectedProj:''}`);
+  let pres = await apiFetch(`/api/presencas?mes=${selectedMes}&ano=${selectedAno}${selectedProj!=='all'?'&projeto='+selectedProj:''}`);
+  let abonos = await apiFetch(`/api/abonos?mes=${selectedMes}&ano=${selectedAno}`);
+  let ausencias = await apiFetch(`/api/ausencias?${selectedProj!=='all'?'projeto='+selectedProj:''}`);
+
+  // Fallback com dados de exemplo se API indisponível
+  if(!funcs) funcs = getExampleFuncionarios(selectedProj);
+  if(!pres) pres = getExamplePresencas(funcs, selectedMes, selectedAno);
+  if(!abonos) abonos = [];
+  if(!ausencias) ausencias = [];
+
+  gradeData = { funcionarios: funcs, presencas: pres, abonos, ausencias };
+  renderGrade();
+}
+
+function renderGradeView() {
+  const total = diasDoMes(selectedMes, selectedAno);
+  const nomeProjeto = selectedProj === 'all' ? 'Todos os projetos' : (PROJETOS[selectedProj] || selectedProj);
+
+  document.getElementById('content-area').innerHTML = `
+  <div class="sync-bar">
+    <div class="sync-dot"></div>
+    ${nomeProjeto} &nbsp;|&nbsp; ${nomeMes(selectedMes)} / ${selectedAno} &nbsp;|&nbsp; ${diasUteis(selectedMes, selectedAno)} dias úteis
+  </div>
+  <div class="filters-bar">
+    <label>Buscar:</label>
+    <input type="text" class="search-input" id="filter-search" placeholder="Nome do colaborador…" value="${filterSearch}" oninput="filterSearch=this.value;renderGrade()">
+    <label>Situação:</label>
+    <select class="filter-select" id="filter-sit" onchange="filterSituacao=this.value;renderGrade()">
+      <option value="">Todos</option>
+      <option value="Ativo">Ativo</option>
+      <option value="Ausente">Ausente</option>
+      <option value="Ferias">Férias</option>
+      <option value="Intermitente">Intermitente</option>
+    </select>
+    <span id="hc-badge" class="badge-count">—</span>
+    <div class="filters-right">
+      <button class="btn btn-outline" onclick="exportarExcel()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+        Excel
+      </button>
+      <button class="btn btn-outline" onclick="window.print()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        PDF
+      </button>
+    </div>
+  </div>
+  <div class="grade-wrap" id="grade-wrap">
+    <div style="padding:32px;text-align:center;color:#9ca3af;font-size:13px">Carregando dados…</div>
+  </div>
+  <div class="legend" id="grade-legend">
+    ${legendHTML()}
+  </div>`;
+
+  loadGradeData();
+}
+
+function legendHTML() {
+  const items = [
+    ['badge-ponto','✓ Ponto eletrônico'],['badge-manual','✓ Manual'],['badge-sp','SP Sem ponto (COORD/GER)'],
+    ['badge-fer','FER Férias'],['badge-aus','AUS Ausente INSS'],['badge-el','EL Entendimento lógico'],
+    ['badge-he','HE Hora extra (FDS)'],['badge-fds','FDS Fim de semana'],
+    ['badge-nc','NC Não contratado'],['badge-ncv','NCV Não convocado'],['badge-plus','+ Sem registro'],
+  ];
+  return items.map(([cls,txt]) => `<span class="legend-item"><span class="badge ${cls}" style="cursor:default">${txt.split(' ')[0]}</span>${txt.split(' ').slice(1).join(' ')}</span>`).join('');
+}
+
+function renderGrade() {
+  const wrap = document.getElementById('grade-wrap');
+  if(!wrap) return;
+
+  let funcs = gradeData.funcionarios;
+  if(filterSearch) funcs = funcs.filter(f => f.nome.toLowerCase().includes(filterSearch.toLowerCase()));
+  if(filterSituacao) funcs = funcs.filter(f => f.situacao === filterSituacao);
+
+  const badge = document.getElementById('hc-badge');
+  if(badge) badge.textContent = funcs.length + ' colab.';
+
+  if(!funcs.length) {
+    wrap.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg><p>Nenhum colaborador encontrado</p></div>`;
+    return;
+  }
+
+  const mes = selectedMes, ano = selectedAno;
+  const total = diasDoMes(mes, ano);
+  const uteis = diasUteis(mes, ano);
+
+  // Cabeçalho
+  let thead = `<tr><th class="col-name">Colaborador</th><th class="col-func">Função</th>`;
+  for(let d = 1; d <= total; d++) {
+    const wd = diaSemana(d, mes, ano);
+    const isFds = wd===0||wd===6;
+    thead += `<th class="${isFds?'weekend':''}" title="${SEMANA[wd]} ${d}/${mes}">${d}<br><span style="font-size:9px;font-weight:400">${SEMANA[wd].substring(0,2)}</span></th>`;
+  }
+  thead += `<th class="col-fte">FTE</th></tr>`;
+
+  // Linhas
+  let tbody = '';
+  let totalFteGrade = 0;
+  let totalPresByDia = Array(total+1).fill(0);
+
+  for(const f of funcs) {
+    let fteFunc = 0;
+    let cells = '';
+    for(let d = 1; d <= total; d++) {
+      const b = calcBadge(f.matricula, d, mes, ano, f.funcao, gradeData.presencas, gradeData.abonos, gradeData.ausencias, f.dt_admissao, f.dt_demissao, f.situacao);
+      if(b.fte) {
+        fteFunc += 1/uteis;
+        totalPresByDia[d]++;
+      }
+      const clickable = ['badge-plus','badge-el','badge-manual','badge-ponto'].includes(b.cls);
+      cells += `<td><span class="badge ${b.cls}" ${clickable?`onclick="abrirModal('${f.matricula}','${f.nome}',${d},'${b.cls}')"`:''}>${b.txt}</span></td>`;
+    }
+    const fteVal = (fteFunc * uteis).toFixed(1);
+    totalFteGrade += parseFloat(fteVal);
+    tbody += `<tr>
+      <td class="col-name" title="${f.nome}">${f.nome}${f.situacao==='Intermitente'?'<span class="badge-int">INT</span>':''}</td>
+      <td class="col-func">${f.funcao}</td>
+      ${cells}
+      <td class="col-fte">${fteVal}</td>
+    </tr>`;
+  }
+
+  // Linha total
+  let totalCells = '';
+  for(let d = 1; d <= total; d++) {
+    const isFds = isWeekend(d, mes, ano);
+    totalCells += `<td style="font-size:10px;${isFds?'color:#9ca3af':''}">${isFds?'':totalPresByDia[d]}</td>`;
+  }
+  const totalRow = `<tr class="row-total">
+    <td class="col-name"><strong>TOTAL (${funcs.length} colab.)</strong></td>
+    <td class="col-func"></td>
+    ${totalCells}
+    <td class="col-fte">${totalFteGrade.toFixed(1)}</td>
+  </tr>`;
+
+  wrap.innerHTML = `<table class="grade-table" id="grade-tbl"><thead>${thead}</thead><tbody>${tbody}${totalRow}</tbody></table>`;
+}
+
+function abrirModal(matricula, nome, dia, cls) {
+  const mes = selectedMes, ano = selectedAno;
+  const dataStr = `${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+  editTarget = { matricula, dia, mes, ano };
+  document.getElementById('modal-func-name').value = nome;
+  document.getElementById('modal-data').value = `${String(dia).padStart(2,'0')}/${String(mes).padStart(2,'0')}/${ano}`;
+  document.getElementById('modal-presenca-title').textContent = `Editar presença — ${nome}`;
+  const tipo = document.getElementById('modal-tipo');
+  if(cls === 'badge-ponto') tipo.value = 'ponto';
+  else if(cls === 'badge-manual') tipo.value = 'manual';
+  else tipo.value = '';
+  openModal('modal-presenca');
+}
+
+async function salvarPresenca() {
+  if(!editTarget) return;
+  const tipo = document.getElementById('modal-tipo').value;
+  const { matricula, dia, mes, ano } = editTarget;
+  const dataStr = `${ano}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+
+  const result = await apiPost('/api/presencas', { matricula, data: dataStr, fonte: tipo || null });
+  closeModal('modal-presenca');
+
+  if(tipo) {
+    const existing = gradeData.presencas.findIndex(p => p.matricula === matricula && p.data === dataStr);
+    if(existing >= 0) gradeData.presencas[existing].fonte = tipo;
+    else gradeData.presencas.push({ matricula, data: dataStr, fonte: tipo });
+    toast('Presença salva com sucesso!', 'success');
+  } else {
+    gradeData.presencas = gradeData.presencas.filter(p => !(p.matricula === matricula && p.data === dataStr));
+    toast('Registro removido.');
+  }
+  renderGrade();
+}
+
+/* ═══════════════════════════════════════════════════════
+   VIEW: EXPORTAÇÃO
+═══════════════════════════════════════════════════════ */
+function renderExportView() {
+  const key = `${selectedMes}-${selectedAno}`;
+  const data = FTE_DATA[key] || FTE_DATA['4-2026'];
+
+  document.getElementById('content-area').innerHTML = `
+  <div style="padding:20px;max-width:700px">
+    <div class="section-header">
+      <span class="section-title-lg">Exportação de relatórios</span>
+    </div>
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:20px">${nomeMes(selectedMes)} / ${selectedAno}</p>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Relatório FTE por Projeto — Excel (.xlsx)</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Tabela consolidada com HC, FTE, % utilização e dias úteis de todos os projetos do mês selecionado.</p>
+        <button class="btn btn-primary" onclick="exportarFTEExcel()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          Baixar Excel — FTE resumido
+        </button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Grade de Presença Completa — Excel (.xlsx)</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Grade diária com todos os colaboradores, badges de presença e FTE individual. Selecione o projeto:</p>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <select class="filter-select" id="exp-proj" style="width:220px">
+            <option value="183">183 — Petrobras REVAP</option>
+            <option value="208">208 — Petrobras REFAP</option>
+            <option value="43">43 — Vale S11D</option>
+            <option value="159">159 — Vale Porto Norte</option>
+            <option value="194">194 — Transpetro Suape</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="exportarGradeExcel()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          Baixar Excel — Grade completa
+        </button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Impressão / PDF</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Imprima a grade ou salve como PDF via o diálogo de impressão do navegador. Recomendado: papel A3 paisagem.</p>
+        <button class="btn btn-outline" onclick="navigate('grade');setTimeout(()=>window.print(),400)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Imprimir grade (PDF)
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Histórico de exportações</span></div>
+      <div class="card-body">
+        <table class="table">
+          <thead><tr><th>Arquivo</th><th>Gerado em</th><th>Por</th><th>Ação</th></tr></thead>
+          <tbody>
+            <tr><td>FTE_REVAP_Abril2026.xlsx</td><td>05/05/2026 09:12</td><td>thiego.silva</td><td><button class="btn btn-ghost" style="font-size:11px;padding:3px 8px">Baixar</button></td></tr>
+            <tr><td>Grade_REFAP_Abril2026.xlsx</td><td>05/05/2026 09:15</td><td>thiego.silva</td><td><button class="btn btn-ghost" style="font-size:11px;padding:3px 8px">Baixar</button></td></tr>
+            <tr><td>FTE_Empresa_Março2026.xlsx</td><td>03/04/2026 16:44</td><td>thiego.silva</td><td><button class="btn btn-ghost" style="font-size:11px;padding:3px 8px">Baixar</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+function exportarFTEExcel() {
+  const key = `${selectedMes}-${selectedAno}`;
+  const data = FTE_DATA[key] || FTE_DATA['4-2026'];
+  const uteis = diasUteis(selectedMes, selectedAno);
+
+  const rows = [['Código','Projeto','HC','FTE','Utilização %','Dias Úteis','Mês','Ano']];
+  for(const p of data.projetos) {
+    rows.push([p.cod, p.nome, p.hc, +p.fte.toFixed(1), +((p.fte/p.hc)*100).toFixed(1), uteis, selectedMes, selectedAno]);
+  }
+  const total = data.projetos.reduce((s,p)=>({hc:s.hc+p.hc,fte:s.fte+p.fte}), {hc:0,fte:0});
+  rows.push(['','TOTAL',total.hc,+total.fte.toFixed(1),'',uteis,selectedMes,selectedAno]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:8},{wch:22},{wch:8},{wch:8},{wch:12},{wch:12},{wch:6},{wch:6}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'FTE Resumido');
+  XLSX.writeFile(wb, `FTE_Empresa_${nomeMes(selectedMes)}${selectedAno}.xlsx`);
+  toast('Excel gerado com sucesso!', 'success');
+}
+
+function exportarGradeExcel() {
+  const proj = document.getElementById('exp-proj')?.value || '183';
+  const funcs = getExampleFuncionarios(proj);
+  const pres = getExamplePresencas(funcs, selectedMes, selectedAno);
+  const uteis = diasUteis(selectedMes, selectedAno);
+  const total = diasDoMes(selectedMes, selectedAno);
+
+  const header = ['Matrícula','Nome','Função','Situação'];
+  for(let d=1;d<=total;d++) { const wd=diaSemana(d,selectedMes,selectedAno); header.push(`${d}(${SEMANA[wd].substring(0,3)})`); }
+  header.push('FTE');
+
+  const rows = [header];
+  for(const f of funcs) {
+    const row = [f.matricula, f.nome, f.funcao, f.situacao];
+    let fte = 0;
+    for(let d=1;d<=total;d++){
+      const b = calcBadge(f.matricula,d,selectedMes,selectedAno,f.funcao,pres,[],[],f.dt_admissao,f.dt_demissao,f.situacao);
+      row.push(b.txt);
+      if(b.fte) fte += 1/uteis;
+    }
+    row.push(+(fte*uteis).toFixed(1));
+    rows.push(row);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, `Grade ${proj}`);
+  XLSX.writeFile(wb, `Grade_${proj}_${nomeMes(selectedMes)}${selectedAno}.xlsx`);
+  toast('Grade exportada com sucesso!', 'success');
+}
+
+function exportarExcel() { navigate('export'); setTimeout(exportarGradeExcel, 200); }
+
+/* ═══════════════════════════════════════════════════════
+   VIEW: ADMIN — RELÓGIOS & PROJETOS
+═══════════════════════════════════════════════════════ */
+let relogiosData = [
+  {id:'001',desc:'ADM-ATI',projeto:null,pendente:true},
+  {id:'002',desc:'ADM-ATI 2',projeto:null,pendente:true},
+  {id:'003',desc:'SP-SJC_REVAP 01',projeto:'183',pendente:false},
+  {id:'004',desc:'SP-SJC_REVAP 02',projeto:'183',pendente:false},
+  {id:'005',desc:'SP-SJC_REVAP 03',projeto:'183',pendente:false},
+  {id:'006',desc:'SP-SJC_REVAP 04',projeto:'183',pendente:false},
+  {id:'007',desc:'SP-SJC_REVAP 05',projeto:'183',pendente:false},
+  {id:'008',desc:'SP-SJC_REVAP 06',projeto:'183',pendente:false},
+  {id:'101',desc:'S11D REL 01',projeto:'43',pendente:false},
+  {id:'102',desc:'S11D REL 02',projeto:'43',pendente:false},
+  {id:'103',desc:'S11D REL 03',projeto:'43',pendente:false},
+  {id:'105',desc:'S11D REL 05',projeto:'43',pendente:false},
+  {id:'106',desc:'S11D REL 06',projeto:'43',pendente:false},
+  {id:'107',desc:'HYDRO REL 01',projeto:'225',pendente:false},
+  {id:'201',desc:'ADM-RJ',projeto:null,pendente:true},
+  {id:'202',desc:'CSN UPV MEC',projeto:'74',pendente:false},
+  {id:'203',desc:'CSN UPV VUL',projeto:'135',pendente:false},
+  {id:'204',desc:'CSN UPV DES',projeto:'131',pendente:false},
+  {id:'303',desc:'PORTO NORTE 01',projeto:'159',pendente:false},
+  {id:'305',desc:'PORTO NORTE 02',projeto:'159',pendente:false},
+  {id:'403',desc:'REFAP 01',projeto:'208',pendente:false},
+  {id:'404',desc:'REFAP 02',projeto:'208',pendente:false},
+  {id:'405',desc:'REFAP 03',projeto:'208',pendente:false},
+  {id:'406',desc:'REFAP 04',projeto:'208',pendente:false},
+  {id:'407',desc:'REFAP 05',projeto:'208',pendente:false},
+  {id:'408',desc:'REFAP 06',projeto:'208',pendente:false},
+  {id:'501',desc:'ULTRACARGO SUAPE',projeto:'141',pendente:false},
+  {id:'502',desc:'TRANSPETRO SUAPE 01',projeto:'194',pendente:false},
+  {id:'503',desc:'TRANSPETRO SUAPE 02',projeto:'194',pendente:false},
+  {id:'504',desc:'GALPAO-PE',projeto:null,pendente:true},
+  {id:'702',desc:'BRAVA RN',projeto:'214',pendente:false},
+];
+
+function renderAdminView() {
+  const pendentes = relogiosData.filter(r=>r.pendente);
+  const mapeados = relogiosData.filter(r=>!r.pendente);
+
+  document.getElementById('content-area').innerHTML = `
+  <div style="padding:20px">
+    <div class="section-header">
+      <span class="section-title-lg">Relógios &amp; Projetos</span>
+      <span class="badge-count" style="background:#fee2e2;color:#991b1b">${pendentes.length} sem mapeamento</span>
+    </div>
+
+    ${pendentes.length ? `
+    <div class="card" style="margin-bottom:16px;border-color:#fca5a5">
+      <div class="card-header" style="background:#fff5f5">
+        <span class="card-title" style="color:#991b1b">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Relógios sem projeto mapeado (${pendentes.length})
+        </span>
+      </div>
+      <table class="table">
+        <thead><tr><th>Relógio</th><th>Descrição</th><th>Projeto</th><th>Ação</th></tr></thead>
+        <tbody>
+          ${pendentes.map(r=>`<tr>
+            <td><span class="pill pill-red">${r.id}</span></td>
+            <td>${r.desc}</td>
+            <td><span style="color:#9ca3af;font-size:11px">— sem projeto —</span></td>
+            <td><button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="abrirModalRelogio('${r.id}','${r.desc}','')">Mapear projeto</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : `<div class="card" style="margin-bottom:16px;border-color:#6ee7b7">
+      <div class="card-body" style="display:flex;align-items:center;gap:10px;color:#065f46">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        Todos os relógios estão mapeados.
+      </div>
+    </div>`}
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Todos os relógios (${relogiosData.length})</span>
+        <input type="text" class="search-input" placeholder="Buscar relógio…" oninput="filtrarRelogios(this.value)" style="width:180px">
+      </div>
+      <table class="table" id="rel-table">
+        <thead><tr><th>Relógio</th><th>Descrição</th><th>Projeto</th><th>Status</th><th>Ação</th></tr></thead>
+        <tbody id="rel-body">${relogiosBodyHTML(relogiosData)}</tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-header"><span class="card-title">Funcionário com problema no ERP</span></div>
+      <div class="card-body">
+        <table class="table">
+          <thead><tr><th>Matrícula</th><th>Nome</th><th>Situação</th><th>Pendência</th></tr></thead>
+          <tbody>
+            <tr><td>010717</td><td>RODRIGO BERTAZZO</td><td><span class="pill pill-red">Ativo</span></td><td><code style="font-size:11px;background:#f3f4f6;padding:2px 6px;border-radius:4px">codigo_projeto = #N/D</code> — corrigir no TOTVS</td></tr>
+            <tr><td>011811</td><td>LUIZ ANDRADE</td><td><span class="pill pill-blue">Ativo</span></td><td>Aparece no proj. 183 mas ausente do HC oficial — verificar</td></tr>
+            <tr><td>011812</td><td>PAULO ARMANDO</td><td><span class="pill pill-blue">Ativo</span></td><td>Aparece no proj. 183 mas ausente do HC oficial — verificar</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+function relogiosBodyHTML(lista) {
+  return lista.map(r=>`<tr>
+    <td><span class="pill ${r.pendente?'pill-red':'pill-blue'}">${r.id}</span></td>
+    <td>${r.desc}</td>
+    <td>${r.projeto ? `<strong>${r.projeto}</strong> — ${PROJETOS[r.projeto]||''}` : '<span style="color:#9ca3af">—</span>'}</td>
+    <td>${r.pendente ? '<span class="badge-status badge-open">Pendente</span>' : '<span class="badge-status badge-closed">Mapeado</span>'}</td>
+    <td><button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="abrirModalRelogio('${r.id}','${r.desc}','${r.projeto||''}')">Editar</button></td>
+  </tr>`).join('');
+}
+
+function filtrarRelogios(q) {
+  const lista = q ? relogiosData.filter(r=>r.id.includes(q)||r.desc.toLowerCase().includes(q.toLowerCase())) : relogiosData;
+  const body = document.getElementById('rel-body');
+  if(body) body.innerHTML = relogiosBodyHTML(lista);
+}
+
+function abrirModalRelogio(id, desc, proj) {
+  document.getElementById('modal-rel-id').value = id;
+  document.getElementById('modal-rel-desc').value = desc;
+  document.getElementById('modal-rel-proj').value = proj || '';
+  openModal('modal-relogio');
+}
+
+function salvarRelogio() {
+  const id = document.getElementById('modal-rel-id').value;
+  const proj = document.getElementById('modal-rel-proj').value;
+  const rel = relogiosData.find(r=>r.id===id);
+  if(rel) { rel.projeto = proj||null; rel.pendente = !proj; }
+  closeModal('modal-relogio');
+  toast(proj ? `Relógio ${id} mapeado para projeto ${proj}!` : `Relógio ${id} desmapeado.`, proj?'success':'');
+  renderAdminView();
+}
+
+/* ═══════════════════════════════════════════════════════
+   AÇÕES TOPBAR
+═══════════════════════════════════════════════════════ */
+async function syncTotvs() {
+  toast('Iniciando sincronização TOTVS…');
+  setTimeout(() => toast(`Sincronização concluída — ${nomeMes(selectedMes)}/${selectedAno}`, 'success'), 2500);
+}
+
+async function fecharMes() {
+  if(confirm(`Fechar mês ${nomeMes(selectedMes)}/${selectedAno}? Esta ação não pode ser desfeita.`)) {
+    const r = await apiPost('/api/fechamento', { mes: selectedMes, ano: selectedAno });
+    toast(`Mês ${nomeMes(selectedMes)}/${selectedAno} fechado!`, 'success');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER PRINCIPAL
+═══════════════════════════════════════════════════════ */
+function renderView() {
+  Object.values(chartInstances).forEach(c=>c.destroy());
+  chartInstances = {};
+  if(currentView === 'dashboard') renderDashboard();
+  else if(currentView === 'grade') renderGradeView();
+  else if(currentView === 'export') renderExportView();
+  else if(currentView === 'admin') renderAdminView();
+}
+
+/* ─── Init ─── */
+renderView();
+</script>
+</body>
+</html>

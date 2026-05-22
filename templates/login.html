@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Efetivo RTT – Login</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#f0f2f5;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:#fff;border-radius:12px;padding:40px 36px;width:340px;box-shadow:0 2px 16px rgba(0,0,0,.1);display:flex;flex-direction:column;gap:16px}
+.logo{font-size:30px;font-weight:800;color:#c8000a;letter-spacing:2px;text-align:center}
+h2{text-align:center;font-size:17px;color:#555;font-weight:500;margin-top:-8px}
+input{padding:10px 12px;border-radius:7px;border:1px solid #ddd;font-size:15px;outline:none;width:100%}
+input:focus{border-color:#c8000a}
+button{padding:12px;border-radius:7px;background:#c8000a;color:#fff;border:none;font-size:15px;font-weight:600;cursor:pointer}
+button:hover{background:#a80008}
+.erro{color:#c8000a;font-size:13px;text-align:center;background:#fff5f5;padding:8px;border-radius:6px}
+</style>
+</head>
+<body>
+<form class="card" method="POST" action="/login">
+  <div class="logo">RTT</div>
+  <h2>Efetivo</h2>
+  {% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
+  <input type="email" name="email" placeholder="E-mail" required autofocus>
+  <input type="password" name="senha" placeholder="Senha" required>
+  <button type="submit">Entrar</button>
+</form>
+</body>
+</html>
