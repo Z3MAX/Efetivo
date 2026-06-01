@@ -1,0 +1,26 @@
+# Banco de dados local
+efetivo.db
+efetivo.db-shm
+efetivo.db-wal
+
+# Variáveis de ambiente (contém senhas — NUNCA commitar)
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Claude / MCP
+.mcp.json
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

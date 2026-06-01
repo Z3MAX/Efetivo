@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Efetivo RTT</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f5f3;--bg-card:#fff;--bg-side:#1a1a2e;--bg-side-hover:#16213e;--bg-side-act:#0f3460;
+  --text:#1a1a1a;--muted:#6b7280;--side-txt:#c8cfd8;--side-act:#fff;
+  --border:#e5e7eb;--accent:#185FA5;--accent-lt:#e6f1fb;
+  --r:8px;--rl:12px;
+}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--text);background:var(--bg)}
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* Sidebar */
+.sidebar{width:220px;flex-shrink:0;background:var(--bg-side);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+.sidebar-brand .nm{font-size:16px;font-weight:600;color:#fff;letter-spacing:-.01em}
+.sidebar-brand .nm span{color:#60a5fa}
+.sidebar-brand .sb{font-size:11px;color:var(--side-txt);opacity:.7;margin-top:2px}
+.sidebar-nav{flex:1;padding:8px 0;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;color:var(--side-txt);font-size:13px;border-left:3px solid transparent;transition:all .15s;user-select:none}
+.nav-item:hover{background:var(--bg-side-hover);color:#fff}
+.nav-item.active{background:var(--bg-side-act);color:var(--side-act);border-left-color:#60a5fa}
+.nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:.8}
+.nav-item.active svg{opacity:1}
+.nav-sec{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:rgba(255,255,255,.3);padding:12px 16px 4px;font-weight:500}
+.sidebar-footer{padding:12px 16px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:rgba(255,255,255,.4)}
+.sidebar-footer .uf{color:rgba(255,255,255,.6);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+
+/* Topbar */
+.topbar{background:var(--bg-card);border-bottom:1px solid var(--border);padding:0 16px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px}
+.topbar-title{font-size:15px;font-weight:500;white-space:nowrap}
+.topbar-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tsel{font-size:12px;border:1px solid var(--border);border-radius:var(--r);padding:5px 24px 5px 8px;background:var(--bg);color:var(--text);cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center;max-width:240px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:all .15s;white-space:nowrap}
+.btn svg{width:13px;height:13px}
+.btn-p{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-p:hover{background:#0f4a8a}
+.btn-o{background:var(--bg-card);color:var(--text);border-color:var(--border)}
+.btn-o:hover{background:var(--bg)}
+.btn-g{background:transparent;color:var(--muted);border-color:transparent}
+.btn-g:hover{background:var(--bg);color:var(--text)}
+
+/* Content */
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:20px;position:relative}
+
+/* Cards */
+.card{background:var(--bg-card);border-radius:var(--rl);border:1px solid var(--border);overflow:hidden}
+.card-hd{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-hd-title{font-size:13px;font-weight:500}
+.card-body{padding:16px}
+
+/* Metrics */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.mc{background:var(--bg-card);border-radius:var(--rl);border:1px solid var(--border);padding:14px 16px}
+.mc-lbl{font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.mc-val{font-size:26px;font-weight:600;line-height:1;margin-bottom:4px}
+.mc-sub{font-size:11px;color:var(--muted)}
+.mc-up{color:#059669}.mc-dn{color:#dc2626}
+
+/* Charts */
+.charts-row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:20px}
+.chart-box{position:relative;height:220px}
+
+/* Grade - wraper completo abaixo do topbar */
+.grade-page{display:flex;flex-direction:column;height:100%;overflow:hidden}
+.grade-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 14px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0}
+.grade-filters label{font-size:11px;color:var(--muted);font-weight:500}
+.inp-search{padding:5px 10px 5px 28px;border-radius:var(--r);border:1px solid var(--border);font-size:12px;background:var(--bg-card);color:var(--text);width:180px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:7px center}
+.fsel{font-size:12px;border:1px solid var(--border);border-radius:var(--r);padding:5px 22px 5px 7px;background:var(--bg-card);color:var(--text);cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 5px center}
+.fr{margin-left:auto;display:flex;gap:6px}
+.count-pill{display:inline-flex;align-items:center;justify-content:center;background:var(--accent-lt);color:var(--accent);font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px}
+
+/* Indicadores */
+.ind-bar{display:flex;gap:20px;flex-wrap:wrap;padding:9px 14px;border-bottom:1px solid var(--border);background:var(--bg-card);flex-shrink:0;font-size:12px}
+.ind-item .ind-lbl{font-size:10px;color:var(--muted);margin-bottom:1px}
+.ind-item .ind-val{font-size:14px;font-weight:600}
+.ind-fte{color:var(--accent);font-size:16px!important}
+
+/* Grade table */
+.grade-wrap{overflow:auto;flex:1}
+table.gt{border-collapse:collapse;font-size:11px;min-width:max-content;width:100%}
+table.gt th{background:#f9fafb;color:var(--muted);font-weight:500;padding:6px 4px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2}
+table.gt th.th-nome{text-align:left;padding-left:10px;min-width:160px;position:sticky;left:0;z-index:4;border-right:2px solid var(--border)}
+table.gt th.th-func{min-width:110px;text-align:left;padding-left:7px;position:sticky;left:160px;z-index:3}
+table.gt th.fds{color:#9ca3af}
+table.gt th.th-fte{min-width:50px;position:sticky;right:0;z-index:3;background:#f0f9ff;border-left:1px solid #bfdbfe}
+table.gt td{padding:2px 3px;text-align:center;border-bottom:1px solid #f3f4f6;border-right:1px solid #f3f4f6}
+table.gt td.td-nome{text-align:left;padding-left:10px;background:var(--bg-card);position:sticky;left:0;z-index:1;border-right:2px solid var(--border);white-space:nowrap;font-size:11px}
+table.gt td.td-func{text-align:left;padding-left:7px;background:var(--bg-card);position:sticky;left:160px;z-index:1;font-size:10px;color:var(--muted);border-right:1px solid var(--border);white-space:nowrap}
+table.gt td.td-fte{font-weight:600;color:var(--accent);background:#f0f9ff;position:sticky;right:0;z-index:1;border-left:1px solid #bfdbfe}
+table.gt tbody tr:hover td{background:#f9fafb!important}
+table.gt tbody tr:hover td.td-fte{background:#e0f2fe!important}
+table.gt tfoot th{background:#f0f6ff;font-weight:600;font-size:11px;color:var(--muted);border-top:2px solid var(--border)}
+table.gt tfoot th.fds-n{color:#c2410c}
+table.gt .mat{font-size:9px;color:var(--muted);display:block;line-height:1}
+table.gt .nmf{display:block;line-height:1.4}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;justify-content:center;border-radius:4px;font-size:10px;font-weight:700;padding:2px 5px;line-height:1.3;white-space:nowrap;min-width:24px}
+.cp{cursor:pointer}.cp:hover{opacity:.8}
+.badge-ponto{background:#dcfce7;color:#166534}
+.badge-manual{background:#dbeafe;color:#1e40af}
+.badge-nc{background:#f3f4f6;color:#9ca3af;cursor:default}
+.badge-sp{background:#e0e7ff;color:#3730a3;cursor:default}
+.badge-fer{background:#d1fae5;color:#065f46;cursor:default}
+.badge-aus{background:#e0e7ff;color:#3730a3;cursor:default}
+.badge-he{background:#ffedd5;color:#c2410c;cursor:default}
+.badge-fds{background:#f0f9ff;color:#0369a1;cursor:default}
+.badge-el{background:#fef9c3;color:#713f12}
+.badge-ncv{background:#fee2e2;color:#991b1b;cursor:default}
+.badge-af{background:#f3e8ff;color:#6b21a8;cursor:default}
+.badge-ab{background:#fef3c7;color:#92400e;cursor:default}
+.badge-at{background:#fce7f3;color:#9d174d;cursor:default}
+.badge-int{display:inline-block;font-size:9px;background:#fef9c3;color:#854d0e;border-radius:3px;padding:0 3px;margin-left:3px;font-weight:700;cursor:default;vertical-align:middle}
+.vazio{display:inline-flex;align-items:center;justify-content:center;width:22px;height:18px;border-radius:4px;border:1px dashed #d1d5db;color:#9ca3af;font-size:12px;cursor:pointer}.vazio:hover{border-color:var(--accent);color:var(--accent)}
+.bs-open{background:#fef9c3;color:#854d0e;display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:500}
+.bs-closed{background:#d1fae5;color:#065f46;display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:500}
+/* Upload */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--rl);padding:28px;text-align:center;cursor:pointer;transition:all .15s;background:var(--bg)}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:var(--accent-lt)}
+.upload-zone input[type=file]{display:none}
+.upload-zone svg{width:32px;height:32px;color:var(--muted);margin:0 auto 8px;display:block}
+.tag-fonte-manual{background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px}
+.tag-fonte-totvs{background:#dbeafe;color:#1e40af;font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px}
+/* Bulk mode */
+.bulk-bar{display:none;position:sticky;bottom:0;background:#1a1a2e;color:#fff;padding:10px 16px;align-items:center;gap:10px;flex-wrap:wrap;z-index:10;border-top:2px solid #60a5fa}
+.bulk-bar.active{display:flex}
+.bulk-bar select,.bulk-bar input{font-size:12px;padding:5px 8px;border-radius:var(--r);border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff}
+.bulk-bar select option{background:#1a1a2e;color:#fff}
+.bulk-bar label{font-size:12px;color:rgba(255,255,255,.7)}
+.bulk-count{font-size:13px;font-weight:600;color:#60a5fa}
+.btn-bulk-apply{background:#60a5fa;color:#1a1a2e;border:none;padding:7px 16px;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer}
+.btn-bulk-apply:hover{background:#93c5fd}
+.btn-bulk-cancel{background:transparent;color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.2);padding:6px 12px;border-radius:var(--r);font-size:12px;cursor:pointer}
+table.gt td.td-check{width:28px;text-align:center;position:sticky;left:0;z-index:1;background:var(--bg-card)}
+table.gt th.th-check{width:28px;position:sticky;left:0;z-index:4;background:#f9fafb}
+table.gt tbody tr.selected td{background:#eff6ff!important}
+table.gt tbody tr.selected td.td-fte{background:#dbeafe!important}
+
+/* Sync bar */
+.sync-bar{display:flex;align-items:center;gap:8px;padding:7px 14px;background:#f0f9ff;border-bottom:1px solid #bfdbfe;font-size:11px;color:#1e40af;flex-shrink:0}
+.sdot{width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0}
+.sdot.old{background:#f59e0b}
+
+/* Popover */
+.popover{position:absolute;z-index:200;background:#fff;border:1px solid var(--border);border-radius:var(--rl);box-shadow:0 8px 24px rgba(0,0,0,.12);padding:10px;min-width:220px;top:100%;left:50%;transform:translateX(-50%)}
+.popover select{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:var(--r);font-size:12px;margin-bottom:8px;color:var(--text)}
+.popover-btns{display:flex;gap:6px}
+.popover-btns button{flex:1;padding:5px 8px;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border)}
+.pop-ok{background:#d1fae5;color:#065f46;border-color:#6ee7b7!important}
+.pop-cancel{background:#f3f4f6;color:#374151}
+
+/* Legend */
+.legend{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;border-top:1px solid var(--border);background:#fafafa;flex-shrink:0}
+.leg-item{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted)}
+
+/* Loading */
+.loading-ov{position:absolute;inset:0;background:rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center;z-index:50;font-size:13px;color:var(--muted)}
+.spin{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sp .6s linear infinite;margin-right:8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* Toast */
+#toast{position:fixed;bottom:20px;right:20px;z-index:9999;background:#1a1a1a;color:#fff;padding:9px 15px;border-radius:var(--r);font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.15);transform:translateY(60px);opacity:0;transition:all .25s;max-width:280px}
+#toast.show{transform:translateY(0);opacity:1}
+#toast.ok{background:#065f46}
+#toast.err{background:#991b1b}
+
+/* Table */
+.table{width:100%;border-collapse:collapse;font-size:12px}
+.table th{text-align:left;padding:8px 11px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em;background:#f9fafb}
+.table td{padding:8px 11px;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+.table tbody tr:hover td{background:#f9fafb}
+.pill{display:inline-block;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:600}
+.pill-b{background:#dbeafe;color:#1e40af}
+.pill-g{background:#d1fae5;color:#065f46}
+.pill-r{background:#fee2e2;color:#991b1b}
+
+/* Form */
+.form-group{margin-bottom:13px}
+.form-lbl{font-size:12px;font-weight:500;color:var(--muted);margin-bottom:4px;display:block}
+.form-inp,.form-sel{width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:var(--r);font-size:13px;color:var(--text);background:var(--bg);outline:none}
+.form-inp:focus,.form-sel:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(24,95,165,.1)}
+
+/* Modal */
+.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal{background:var(--bg-card);border-radius:var(--rl);box-shadow:0 20px 40px rgba(0,0,0,.15);width:340px;max-width:95vw;overflow:hidden}
+.modal-hd{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:14px;font-weight:500}
+.modal-body{padding:16px}
+.modal-ft{padding:11px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+
+/* Badge fechado */
+#badge-fechado{display:none;background:#d1fae5;color:#065f46;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:500}
+
+/* Empty */
+.empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:13px}
+
+@media print{
+  .sidebar,.topbar,.grade-filters,.legend,.btn,.ind-bar,.sync-bar{display:none!important}
+  .grade-page{height:auto}
+  .grade-wrap{overflow:visible;max-height:none}
+  table.gt th,table.gt td{font-size:8px;padding:1px 3px}
+  @page{size:A3 landscape;margin:8mm}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="nm"><span>Efetivo</span> RTT</div>
+    <div class="sb">Controle de presença &amp; FTE</div>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-sec">Principal</div>
+    <div class="nav-item active" data-view="dashboard" onclick="navigate('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item" data-view="grade" onclick="navigate('grade')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Grade de Presença
+    </div>
+    <div class="nav-item" data-view="export" onclick="navigate('export')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Exportação
+    </div>
+    <div class="nav-sec">Configuração</div>
+    <div class="nav-item" data-view="admin" onclick="navigate('admin')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
+      Relógios &amp; Projetos
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <div class="uf" id="sf-email">{{ session['usuario']['email'] if session.usuario else '—' }}</div>
+    <div>RTT Soluções Industriais</div>
+  </div>
+</nav>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0">
+      <span class="topbar-title" id="topbar-title">Dashboard</span>
+      <span id="badge-fechado">✓ Mês fechado</span>
+    </div>
+    <div class="topbar-right">
+      <select class="tsel" id="sel-mes" onchange="onMesChange()">
+        <option value="5-2026">Maio / 2026</option>
+        <option value="4-2026" selected>Abril / 2026</option>
+        <option value="3-2026">Março / 2026</option>
+        <option value="2-2026">Fevereiro / 2026</option>
+        <option value="1-2026">Janeiro / 2026</option>
+      </select>
+      <select class="tsel" id="sel-proj" onchange="onProjChange()">
+        <option value="">— Selecione um projeto —</option>
+      </select>
+      <button class="btn btn-o" onclick="syncTotvs()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Sincronizar
+      </button>
+      <button class="btn btn-p" id="btn-fechar" onclick="fecharMes()" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        Fechar Mês
+      </button>
+    </div>
+  </div>
+  <div id="content-area" style="flex:1;overflow:hidden;display:flex;flex-direction:column;position:relative"></div>
+</div>
+</div>
+
+<!-- Modal relógio -->
+<div class="modal-ov" id="modal-rel" style="display:none" onclick="closeModal('modal-rel')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-hd">
+      <span class="modal-title">Mapear relógio ao projeto</span>
+      <button class="btn btn-g" style="padding:3px" onclick="closeModal('modal-rel')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-lbl">Relógio</label><input class="form-inp" id="mr-id" readonly style="background:#f9fafb"></div>
+      <div class="form-group"><label class="form-lbl">Descrição</label><input class="form-inp" id="mr-desc" readonly style="background:#f9fafb"></div>
+      <div class="form-group"><label class="form-lbl">Projeto destino</label><select class="form-sel" id="mr-proj"></select></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-o" onclick="closeModal('modal-rel')">Cancelar</button>
+      <button class="btn btn-p" onclick="salvarRelogio()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ── Estado ──────────────────────────────────────────────── */
+let projetos = [], selectedMes = 4, selectedAno = 2026, selectedProj = ''
+let currentView = 'dashboard', mesFechado = false, syncStatus = null
+let funcionarios = [], presencas = {}, abonos = {}, ausencias = {}, ausenciasMapeadas = new Set()
+let popoverAtivo = null, chartInst = {}, relogiosData = []
+
+const MESES = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+const SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
+const ABONO_CUSTO = ['21','04','11','40','41','43','44']
+
+/* ── API ─────────────────────────────────────────────────── */
+async function get(path) {
+  try { const r = await fetch(path); if (!r.ok) throw new Error(r.status); return await r.json() }
+  catch(e) { console.error('GET', path, e); return null }
+}
+async function post(path, body) {
+  try {
+    const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    return await r.json()
+  } catch(e) { console.error('POST', path, e); return null }
+}
+
+/* ── Data helpers ────────────────────────────────────────── */
+function diasDoMes(ano, m0) { return new Date(ano, m0+1, 0).getDate() }
+function diasArr(ano, m0) { return Array.from({length:diasDoMes(ano,m0)},(_,i)=>i+1) }
+function isFds(ano, m0, d) { const w=new Date(ano,m0,d).getDay(); return w===0||w===6 }
+function diasUteis(ano, m0) { return diasArr(ano,m0).filter(d=>!isFds(ano,m0,d)).length }
+function dataStr(ano, m0, d) { return `${ano}-${String(m0+1).padStart(2,'0')}-${String(d).padStart(2,'0')}` }
+function isSP(f) { const u=(f||'').toUpperCase(); return u.startsWith('COORD')||u.startsWith('GER') }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+function nomeResumido(s) { const p=(s||'').trim().split(/\s+/); return p.length<=2?esc(s):esc(p[0]+' '+p[p.length-1]) }
+
+/* ── Toast ───────────────────────────────────────────────── */
+function toast(msg, type='') {
+  const el=document.getElementById('toast'); el.textContent=msg; el.className=`show ${type}`
+  setTimeout(()=>el.className='',3000)
+}
+function openModal(id){document.getElementById(id).style.display='flex'}
+function closeModal(id){document.getElementById(id).style.display='none'}
+function destroyCharts(){Object.values(chartInst).forEach(c=>{try{c.destroy()}catch(e){}});chartInst={}}
+
+/* ── Init ────────────────────────────────────────────────── */
+async function init() {
+  const [pData, ss] = await Promise.all([get('/api/projetos'), get('/api/sync-status')])
+  if (pData) {
+    projetos = pData
+    const sel = document.getElementById('sel-proj')
+    projetos.forEach(p => { const o=document.createElement('option'); o.value=p.codigo; o.textContent=p.nome; sel.appendChild(o) })
+    const mr = document.getElementById('mr-proj')
+    mr.innerHTML = '<option value="">— Sem projeto —</option>'
+    projetos.forEach(p => { const o=document.createElement('option'); o.value=p.codigo; o.textContent=p.nome; mr.appendChild(o) })
+  }
+  syncStatus = ss
+  renderView()
+}
+
+/* ── Navegação ───────────────────────────────────────────── */
+function navigate(view) {
+  currentView = view
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active', el.dataset.view===view))
+  document.getElementById('topbar-title').textContent = {dashboard:'Dashboard',grade:'Grade de Presença',export:'Exportação & Importação',admin:'Relógios & Projetos'}[view]||view
+  renderView()
+}
+function onMesChange() { const v=document.getElementById('sel-mes').value.split('-'); selectedMes=+v[0]; selectedAno=+v[1]; renderView() }
+function onProjChange() { selectedProj=document.getElementById('sel-proj').value; if(currentView==='grade') loadGrade(); else renderView() }
+function renderView() { destroyCharts(); if(currentView==='dashboard') renderDashboard(); else if(currentView==='grade') renderGradeView(); else if(currentView==='export') renderExport(); else if(currentView==='admin') renderAdmin() }
+
+/* ── Processar ausências ─────────────────────────────────── */
+function processarAus(lista, ausMap, ausMat, ano, m0) {
+  const p0=new Date(ano,m0,1), pN=new Date(ano,m0+1,0)
+  lista.forEach(a => {
+    ausMat.add(a.matricula)
+    const ini=new Date(a.dt_inicio+'T00:00:00'), fim=new Date(a.dt_fim+'T00:00:00')
+    const de=ini<p0?p0:ini, ate=fim>pN?pN:fim
+    const tipo=a.situacao==='Ferias'?'ferias':'ausente'
+    for(let d=new Date(de);d<=ate;d.setDate(d.getDate()+1)) {
+      ausMap[`${a.matricula}-${dataStr(d.getFullYear(),d.getMonth(),d.getDate())}`]=tipo
+    }
+  })
+}
+
+/* ── Pré-computar atestados estendidos (dia 16+ calendário) ─ */
+// Regra: colaborador com [Atestado Medico] registrado no TOTVS por
+// 16+ dias de calendário consecutivos → afastado (não conta FTE)
+// Dias 1-15: EL normal (empregador paga). Dia 16+: AT (INSS assume)
+function calcAtestadoExt(funcs, ano, m0, pMap, aMap, ausMap, ausMat) {
+  const ext = new Set()
+  const diasMes = diasArr(ano, m0)
+  const LIMITE_CAL = 15
+  const atestDias = window._atestadosDias || new Set()
+
+  for (const f of funcs) {
+    const dem = f.dt_demissao&&f.dt_demissao>'2000-01-01'?f.dt_demissao:null
+    let streakInicio = null
+
+    for (const d of diasMes) {
+      const dt = dataStr(ano, m0, d)
+
+      // Quebra de sequência: NC, ponto registrado ou sem atestado neste dia
+      if ((f.dt_admissao&&dt<f.dt_admissao)||(dem&&dt>dem)) { streakInicio=null; continue }
+      if (pMap[`${f.matricula}-${dt}`]?.codigo_projeto) { streakInicio=null; continue }
+
+      // Só avança a sequência se há atestado registrado neste dia
+      if (!atestDias.has(`${f.matricula}-${dt}`)) { streakInicio=null; continue }
+
+      // FDS com atestado: conta no calendário mas não interrompe nem inicia
+      if (isFds(ano, m0, d)) continue
+
+      if (streakInicio === null) streakInicio = new Date(ano, m0, d)
+
+      const diasCal = Math.floor((new Date(ano,m0,d) - streakInicio) / 86400000) + 1
+      if (diasCal > LIMITE_CAL) ext.add(`${f.matricula}-${dt}`)
+    }
+  }
+  return ext
+}
+
+/* ── Calcular FTE de um dia ──────────────────────────────── */
+function fteDay(f, d, dt, m0, ano, pMap, aMap, ausMap, ausMat, atestadoExt) {
+  const dem=f.dt_demissao&&f.dt_demissao>'2000-01-01'?f.dt_demissao:null
+  if((f.dt_admissao&&dt<f.dt_admissao)||(dem&&dt>dem)) return false
+  const fds=isFds(ano,m0,d)
+  const reg=pMap[`${f.matricula}-${dt}`]
+  const tAus=ausMap[`${f.matricula}-${dt}`]
+  const ausFds=fds&&(tAus==='ausente'||(!ausMat.has(f.matricula)&&f.situacao==='Ausente'))
+  if(fds){if(ausFds)return false;return true}
+  if(reg?.codigo_projeto)return true
+  if(isSP(f.funcao))return true
+  if(tAus==='ferias')return true
+  if(tAus==='ausente')return false
+  if(!ausMat.has(f.matricula)&&f.situacao==='Ausente')return false
+  if(!ausMat.has(f.matricula)&&f.situacao==='Ferias')return true
+  const ab=aMap[`${f.matricula}-${dt}`]
+  if(ab)return ABONO_CUSTO.includes(String(ab.cod_abono).trim())
+  if(f.tipo_contrato==='Intermitente')return false
+  // Regra atestado: EL por 16+ dias calendário consecutivos → afastado
+  if(atestadoExt?.has(`${f.matricula}-${dt}`)) return false
+  return true
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DASHBOARD
+═══════════════════════════════════════════════════════════ */
+async function renderDashboard() {
+  const m0=selectedMes-1, uteis=diasUteis(selectedAno,m0), totalDias=diasDoMes(selectedAno,m0)
+  const ca=document.getElementById('content-area')
+  ca.innerHTML=`
+  <div style="overflow-y:auto;flex:1;padding:20px">
+    <div class="sync-bar" style="margin:-20px -20px 20px;padding:7px 20px"><div class="sdot" id="sdb"></div><span id="stxt">Carregando…</span></div>
+    <div class="metrics" id="dmets">${['HC Total','FTE Mês','Utilização','Dias Úteis'].map(l=>`<div class="mc"><div class="mc-lbl">${l}</div><div class="mc-val" style="color:var(--muted);font-size:20px">…</div></div>`).join('')}</div>
+    <div class="charts-row">
+      <div class="card"><div class="card-hd"><span class="card-hd-title">Presença diária — ${MESES[selectedMes]} / ${selectedAno}</span></div><div class="card-body"><div class="chart-box"><canvas id="cl"></canvas></div></div></div>
+      <div class="card"><div class="card-hd"><span class="card-hd-title">FTE por projeto</span></div><div class="card-body"><div class="chart-box"><canvas id="cb"></canvas></div></div></div>
+    </div>
+    <div class="card" id="dtbl"><div class="card-hd"><span class="card-hd-title">Resumo por projeto</span></div><div style="padding:24px;text-align:center;color:var(--muted);font-size:12px">Carregando…</div></div>
+  </div>`
+
+  const [funcs,presArr,abArr,ausArr]=await Promise.all([
+    get(`/api/funcionarios?mes=${selectedMes}&ano=${selectedAno}`),
+    get(`/api/presencas?mes=${selectedMes}&ano=${selectedAno}`),
+    get(`/api/abonos?mes=${selectedMes}&ano=${selectedAno}`),
+    get(`/api/ausencias?mes=${selectedMes}&ano=${selectedAno}`)
+  ])
+
+  if(!funcs){document.getElementById('stxt').textContent='Erro ao carregar. Verifique o servidor Flask (localhost:5000).';document.getElementById('sdb').className='sdot old';return}
+
+  const pMap={},aMap={},ausMap={},ausMat=new Set()
+  if(presArr)presArr.forEach(p=>{pMap[`${p.matricula}-${p.data}`]=p})
+  if(abArr)abArr.forEach(a=>{aMap[`${a.matricula}-${a.data}`]=a})
+  if(ausArr)processarAus(ausArr,ausMap,ausMat,selectedAno,m0)
+
+  const dias=diasArr(selectedAno,m0)
+  const byProj={}, ppd={}, projFTE={}, projHC={}
+
+  funcs.forEach(f=>{const c=f.codigo_projeto||'SEM';if(!byProj[c])byProj[c]=[];byProj[c].push(f)})
+
+  // Corte D-2 para fórmula FTE
+  const c2d=new Date();c2d.setDate(c2d.getDate()-2)
+  const corteD=dataStr(c2d.getFullYear(),c2d.getMonth(),c2d.getDate())
+  const ultMesD=dataStr(selectedAno,m0,dias[dias.length-1])
+  const corteF=corteD<ultMesD?corteD:ultMesD
+  const priMesD=dataStr(selectedAno,m0,1)
+
+  for(const[cod,fs]of Object.entries(byProj)){
+    projHC[cod]=fs.length
+    const ppdP={}
+    fs.forEach(f=>{dias.forEach(d=>{const dt=dataStr(selectedAno,m0,d);if(fteDay(f,d,dt,m0,selectedAno,pMap,aMap,ausMap,ausMat)){ppdP[dt]=(ppdP[dt]||0)+1;ppd[dt]=(ppd[dt]||0)+1}})})
+    // Fórmula correta: (somaPresD2/diasD2)*uteis — igual à grade
+    let somaD2=0,diasD2=0
+    dias.forEach(d=>{const dt=dataStr(selectedAno,m0,d);if(dt<priMesD||dt>corteF)return;diasD2++;somaD2+=uteis>0?(ppdP[dt]||0)/uteis:0})
+    projFTE[cod]=diasD2>0?(somaD2/diasD2)*uteis:0
+  }
+
+  const totalHC=funcs.length
+  const totalFTE=Object.values(projFTE).reduce((s,v)=>s+v,0)
+  const util=totalHC>0?(totalFTE/totalHC*100):0
+  const ss=syncStatus
+  const ult=ss?.ultima_sync?ss.ultima_sync.substring(0,16).replace('T',' '):'desconhecida'
+  document.getElementById('stxt').textContent=`Última sync TOTVS: ${ult} | ${MESES[selectedMes]}/${selectedAno} | ${uteis} dias úteis | ${totalHC.toLocaleString('pt-BR')} funcionários`
+  document.getElementById('sdb').className='sdot'
+  document.getElementById('dmets').innerHTML=`
+    <div class="mc"><div class="mc-lbl">HC Total</div><div class="mc-val">${totalHC.toLocaleString('pt-BR')}</div><div class="mc-sub">${Object.keys(byProj).length} projetos</div></div>
+    <div class="mc"><div class="mc-lbl">FTE do Mês</div><div class="mc-val">${totalFTE.toFixed(1).replace('.',',')}</div><div class="mc-sub">${MESES[selectedMes]} / ${selectedAno}</div></div>
+    <div class="mc"><div class="mc-lbl">Utilização</div><div class="mc-val">${util.toFixed(1).replace('.',',')}%</div><div class="mc-sub mc-${util>=90?'up':'dn'}">${util>=90?'▲ Acima da meta':'▼ Abaixo da meta'}</div></div>
+    <div class="mc"><div class="mc-lbl">Dias Úteis</div><div class="mc-val">${uteis}</div><div class="mc-sub">${totalDias} dias no mês</div></div>`
+
+  setTimeout(()=>{
+    destroyCharts()
+    const labL=[],valL=[]
+    dias.filter(d=>!isFds(selectedAno,m0,d)).forEach(d=>{labL.push(`${d}/${selectedMes}`);valL.push(ppd[dataStr(selectedAno,m0,d)]||0)})
+    const ctxL=document.getElementById('cl')
+    if(ctxL)chartInst.l=new Chart(ctxL,{type:'line',data:{labels:labL,datasets:[{label:'Presentes',data:valL,borderColor:'#185FA5',backgroundColor:'rgba(24,95,165,.08)',borderWidth:2,pointRadius:2,fill:true,tension:.3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false,grid:{color:'#f3f4f6'}},x:{grid:{display:false},ticks:{font:{size:10}}}}}})
+
+    const top=projetos.filter(p=>projFTE[p.codigo]>0).sort((a,b)=>(projFTE[b.codigo]||0)-(projFTE[a.codigo]||0)).slice(0,12)
+    const ctxB=document.getElementById('cb')
+    if(ctxB)chartInst.b=new Chart(ctxB,{type:'bar',data:{labels:top.map(p=>p.codigo),datasets:[{label:'FTE',data:top.map(p=>+(projFTE[p.codigo]||0).toFixed(1)),backgroundColor:'#185FA5',borderRadius:3,borderSkipped:false},{label:'HC',data:top.map(p=>projHC[p.codigo]||0),backgroundColor:'#e5e7eb',borderRadius:3,borderSkipped:false}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}},scales:{x:{grid:{color:'#f3f4f6'}},y:{grid:{display:false},ticks:{font:{size:10}}}}}})
+  },50)
+
+  const comDados=projetos.filter(p=>projHC[p.codigo]>0).sort((a,b)=>(projFTE[b.codigo]||0)-(projFTE[a.codigo]||0))
+  document.getElementById('dtbl').innerHTML=`
+  <div class="card-hd"><span class="card-hd-title">Resumo por projeto — ${MESES[selectedMes]} / ${selectedAno}</span></div>
+  <table class="table"><thead><tr><th>Projeto</th><th>HC</th><th>FTE</th><th>Utilização</th><th>Dias úteis</th></tr></thead><tbody>
+  ${comDados.map(p=>{const hc=projHC[p.codigo]||0,fte=projFTE[p.codigo]||0,u=hc>0?(fte/hc*100):0,cor=u>=90?'#059669':u>=75?'#d97706':'#dc2626';return`<tr>
+    <td><span class="pill pill-b">${p.codigo}</span> <strong>${p.nome.replace(/^\d+ - /,'')}</strong></td>
+    <td>${hc}</td><td><strong>${fte.toFixed(1).replace('.',',')}</strong></td>
+    <td><div style="display:flex;align-items:center;gap:7px"><div style="flex:1;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden;min-width:60px"><div style="height:100%;width:${Math.min(u,100).toFixed(0)}%;background:${cor};border-radius:3px"></div></div><span style="font-size:11px;font-weight:600;color:${cor};min-width:38px">${u.toFixed(1).replace('.',',')}%</span></div></td>
+    <td>${uteis}</td></tr>`}).join('')}
+  <tr style="background:#f9fafb;font-weight:600"><td>Total empresa</td><td>${totalHC.toLocaleString('pt-BR')}</td><td>${totalFTE.toFixed(1).replace('.',',')}</td><td><strong style="color:${util>=90?'#059669':'#d97706'}">${util.toFixed(1).replace('.',',')}%</strong></td><td>${uteis}</td></tr>
+  </tbody></table>`
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GRADE DE PRESENÇA
+═══════════════════════════════════════════════════════════ */
+function renderGradeView() {
+  const ca=document.getElementById('content-area')
+  ca.innerHTML=`
+  <div class="grade-page">
+    <div class="sync-bar"><div class="sdot"></div><span id="gsync">Selecione um projeto para carregar a grade</span></div>
+    <div class="grade-filters">
+      <label>Buscar:</label>
+      <input type="text" class="inp-search" id="inp-busca" placeholder="Nome ou matrícula…" oninput="renderGrade()">
+      <label>Situação:</label>
+      <select class="fsel" id="filt-sit" onchange="renderGrade()">
+        <option value="">Todos</option>
+        <option value="Ativo">Ativo</option>
+        <option value="Ausente">Ausente</option>
+        <option value="Ferias">Férias</option>
+        <option value="Intermitente">Intermitente</option>
+        <option value="Demitido">Demitido no mês</option>
+      </select>
+      <span class="count-pill" id="hc-count">—</span>
+      <div class="fr">
+        <button class="btn btn-o" id="btn-bulk-toggle" onclick="toggleBulkMode()" title="Seleção em massa">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="11" width="4" height="4" rx="1"/><rect x="3" y="17" width="4" height="4" rx="1"/><line x1="10" y1="7" x2="21" y2="7"/><line x1="10" y1="13" x2="21" y2="13"/><line x1="10" y1="19" x2="21" y2="19"/></svg>
+          Em massa
+        </button>
+        <button class="btn btn-o" onclick="exportGradeExcel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg> Excel</button>
+        <button class="btn btn-o" onclick="window.print()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> PDF</button>
+      </div>
+    </div>
+    <div class="ind-bar" id="ind-bar" style="display:none">
+      <div class="ind-item"><div class="ind-lbl">HC</div><div class="ind-val" id="ind-hc">—</div></div>
+      <div class="ind-item"><div class="ind-lbl">Ponto auto</div><div class="ind-val" id="ind-ponto">—</div></div>
+      <div class="ind-item"><div class="ind-lbl">Manual</div><div class="ind-val" id="ind-manual">—</div></div>
+      <div class="ind-item"><div class="ind-lbl">Intermitentes</div><div class="ind-val" id="ind-int">—</div></div>
+      <div class="ind-item"><div class="ind-lbl">FTE do Mês</div><div class="ind-val ind-fte" id="ind-fte">—</div></div>
+    </div>
+    <div class="grade-wrap" id="grade-wrap" onclick="fecharPopover(event)"><div class="empty">Selecione um projeto no seletor acima para carregar a grade.</div></div>
+    <div class="legend">${legendHTML()}</div>
+    <div class="bulk-bar" id="bulk-bar">
+      <span class="bulk-count" id="bulk-count">0 selecionados</span>
+      <button class="btn-bulk-cancel" onclick="selecionarTodos()">Selecionar todos</button>
+      <button class="btn-bulk-cancel" onclick="limparSelecao()">Limpar</button>
+      <div style="flex:1"></div>
+      <label>Projeto:</label>
+      <select id="bulk-proj">${projetos.map(p=>`<option value="${p.codigo}">${p.codigo} — ${p.nome.replace(/^\d+ - /,'')}</option>`).join('')}</select>
+      <label>De:</label>
+      <input type="date" id="bulk-de" value="${selectedAno}-${String(selectedMes).padStart(2,'0')}-01">
+      <label>Até:</label>
+      <input type="date" id="bulk-ate" value="${selectedAno}-${String(selectedMes).padStart(2,'0')}-${String(diasDoMes(selectedAno,selectedMes-1)).padStart(2,'0')}">
+      <label>Modo:</label>
+      <select id="bulk-modo"><option value="vazio">Só preencher vazios</option><option value="tudo">Sobrescrever tudo</option></select>
+      <button class="btn-bulk-apply" onclick="aplicarBulk()">✓ Aplicar</button>
+      <button class="btn-bulk-cancel" onclick="toggleBulkMode()">✕ Cancelar</button>
+    </div>
+  </div>`
+  if(selectedProj) loadGrade()
+}
+
+function legendHTML(){
+  return [['badge-ponto','Ponto auto'],['badge-manual','Manual'],['badge-sp','SP Sem ponto'],['badge-fer','FER Férias'],['badge-aus','AUS Ausente'],['badge-el','EL Entendimento lógico'],['badge-he','HE Hora extra'],['badge-fds','FDS Fim de semana'],['badge-nc','NC Não contratado'],['badge-ncv','NCV Não convocado'],['badge-af','AF Afastamento'],['badge-ab','AB Outro abono'],['badge-at','AT Atestado médico']]
+  .map(([c,t])=>`<span class="leg-item"><span class="badge ${c}" style="cursor:default">${t.split(' ')[0]}</span>${t.split(' ').slice(1).join(' ')}</span>`).join('')
+}
+
+async function loadGrade() {
+  if(!selectedProj){return}
+  setLoading(true)
+  const m0=selectedMes-1
+  const [funcsD,presArr,abArr,ausArr,atestArr,fech]=await Promise.all([
+    get(`/api/funcionarios?projeto=${encodeURIComponent(selectedProj)}&mes=${selectedMes}&ano=${selectedAno}`),
+    get(`/api/presencas?mes=${selectedMes}&ano=${selectedAno}&projeto=${encodeURIComponent(selectedProj)}`),
+    get(`/api/abonos?mes=${selectedMes}&ano=${selectedAno}`),
+    get(`/api/ausencias?mes=${selectedMes}&ano=${selectedAno}`),
+    get(`/api/atestados?mes=${selectedMes}&ano=${selectedAno}`),
+    get(`/api/fechamento?mes=${selectedMes}&ano=${selectedAno}`)
+  ])
+  funcionarios=funcsD||[]
+  presencas={};abonos={};ausencias={};ausenciasMapeadas=new Set()
+  if(presArr)presArr.forEach(p=>{presencas[`${p.matricula}-${p.data}`]=p})
+  if(abArr)abArr.forEach(a=>{abonos[`${a.matricula}-${a.data}`]=a})
+  if(ausArr)processarAus(ausArr,ausencias,ausenciasMapeadas,selectedAno,m0)
+  // Mapa de atestados: 'mat-data' → true
+  window._atestadosDias=new Set()
+  if(atestArr)atestArr.forEach(a=>window._atestadosDias.add(`${a.matricula}-${a.data}`))
+  // Pré-computar atestados estendidos (EL por 16+ dias calendário → afastado)
+  window._atestadoExt=calcAtestadoExt(funcionarios,selectedAno,m0,presencas,abonos,ausencias,ausenciasMapeadas)
+  if(window._atestadoExt.size) console.log(`Atestados estendidos: ${window._atestadoExt.size} dias em ${new Set([...window._atestadoExt].map(k=>k.split('-')[0])).size} colaboradores`)
+  mesFechado=fech?.fechado||false
+  document.getElementById('badge-fechado').style.display=mesFechado?'inline-flex':'none'
+  document.getElementById('btn-fechar').style.display=mesFechado?'none':'flex'
+  const pNome=projetos.find(p=>p.codigo===selectedProj)?.nome||selectedProj
+  const gs=document.getElementById('gsync')
+  if(gs)gs.textContent=`${pNome} | ${MESES[selectedMes]} / ${selectedAno} | ${diasUteis(selectedAno,m0)} dias úteis`
+  document.getElementById('ind-bar').style.display='flex'
+  setLoading(false)
+  renderGrade()
+}
+
+function renderGrade() {
+  const wrap=document.getElementById('grade-wrap'); if(!wrap||!selectedProj)return
+  const m0=selectedMes-1
+  const busca=(document.getElementById('inp-busca')?.value||'').toLowerCase()
+  const filtSit=document.getElementById('filt-sit')?.value||''
+  let funcs=funcionarios
+  if(busca)funcs=funcs.filter(f=>f.nome.toLowerCase().includes(busca)||f.matricula.includes(busca))
+  if(filtSit)funcs=funcs.filter(f=>filtSit==='Demitido'?(f.dt_demissao&&f.dt_demissao>'2000-01-01'):f.situacao===filtSit)
+  const hcEl=document.getElementById('hc-count'); if(hcEl)hcEl.textContent=funcs.length+' colab.'
+  if(!funcs.length){wrap.innerHTML='<div class="empty">Nenhum colaborador encontrado.</div>';return}
+
+  const dias=diasArr(selectedAno,m0), uteis=diasUteis(selectedAno,m0)
+  let cntP=0,cntM=0; const ppd={}
+
+  funcs.forEach(f=>{dias.forEach(d=>{
+    const dt=dataStr(selectedAno,m0,d)
+    const reg=presencas[`${f.matricula}-${dt}`]
+    if(reg?.codigo_projeto&&!isFds(selectedAno,m0,d)){if(reg.fonte==='ponto')cntP++;else cntM++}
+    if(fteDay(f,d,dt,m0,selectedAno,presencas,abonos,ausencias,ausenciasMapeadas,window._atestadoExt))ppd[dt]=(ppd[dt]||0)+1
+  })})
+
+  // FTE D-2
+  const c2=new Date();c2.setDate(c2.getDate()-2)
+  const cs=dataStr(c2.getFullYear(),c2.getMonth(),c2.getDate())
+  const ult=dataStr(selectedAno,m0,dias[dias.length-1])
+  const corte=cs<ult?cs:ult, pri=dataStr(selectedAno,m0,1)
+  let somaD2=0,diasD2=0
+  dias.forEach(d=>{const dt=dataStr(selectedAno,m0,d);if(dt>corte||dt<pri)return;diasD2++;somaD2+=uteis>0?(ppd[dt]||0)/uteis:0})
+  const fteMes=diasD2>0?((somaD2/diasD2)*uteis).toFixed(1):'–'
+
+  const g=id=>document.getElementById(id)
+  if(g('ind-hc'))g('ind-hc').textContent=funcs.length
+  if(g('ind-ponto'))g('ind-ponto').textContent=cntP
+  if(g('ind-manual'))g('ind-manual').textContent=cntM
+  if(g('ind-int'))g('ind-int').textContent=funcs.filter(f=>f.tipo_contrato==='Intermitente').length
+  if(g('ind-fte'))g('ind-fte').textContent=fteMes
+
+  // Thead
+  let html=`<table class="gt"><thead><tr>${bulkMode?`<th class="th-check"><input type="checkbox" onclick="this.checked?selecionarTodos():limparSelecao()" title="Selecionar todos"></th>`:''}<th class="th-nome">Funcionário</th><th class="th-func">Função</th>`
+  dias.forEach(d=>{const fd=isFds(selectedAno,m0,d),wd=new Date(selectedAno,m0,d).getDay();html+=`<th class="${fd?'fds':''}" title="${SEMANA[wd]} ${d}/${selectedMes}">${String(d).padStart(2,'0')}<br><span style="font-size:9px;font-weight:400">${SEMANA[wd].substring(0,2)}</span></th>`})
+  html+=`<th class="th-fte">FTE</th></tr></thead><tbody>`
+
+  let totalFTE=0
+  funcs.forEach(f=>{
+    const int=f.tipo_contrato==='Intermitente'?`<span class="badge-int">INT</span>`:''
+    const sel=bulkSelecionados.has(f.matricula)
+    html+=`<tr data-bulk-mat="${f.matricula}" class="${sel?'selected':''}">${bulkMode?`<td class="td-check"><input type="checkbox" data-chk="${f.matricula}" ${sel?'checked':''} onclick="toggleSelecionado('${f.matricula}')"></td>`:''}<td class="td-nome"><span class="mat">${f.matricula}</span><span class="nmf" title="${esc(f.nome)}">${nomeResumido(f.nome)}${int}</span></td><td class="td-func">${esc(f.funcao||'')}</td>`
+    let fteLn=0
+    dias.forEach(d=>{
+      const dt=dataStr(selectedAno,m0,d),fds=isFds(selectedAno,m0,d)
+      const chave=`${f.matricula}-${dt}`,reg=presencas[chave]
+      const ab=!fds&&abonos[chave],tAus=ausencias[chave]
+      const dem=f.dt_demissao&&f.dt_demissao>'2000-01-01'?f.dt_demissao:null
+      const nc=(f.dt_admissao&&dt<f.dt_admissao)||(dem&&dt>dem)
+      const ausFds=fds&&(tAus==='ausente'||(!ausenciasMapeadas.has(f.matricula)&&f.situacao==='Ausente'))
+      let cell=''
+      if(fds){
+        if(nc)                   cell=`<span class="badge badge-nc">NC</span>`
+        else if(ausFds)          cell=`<span class="badge badge-aus">AUS</span>`
+        else if(reg?.codigo_projeto) cell=`<span class="badge badge-he">HE</span>`
+        else                     cell=`<span class="badge badge-fds">FDS</span>`
+      }else if(nc){
+        cell=`<span class="badge badge-nc">NC</span>`
+      }else if(reg?.codigo_projeto){
+        const cls=reg.fonte==='ponto'?'badge-ponto':'badge-manual'
+        cell=`<span class="badge ${cls} cp" onclick="abrirPop(event,'${f.matricula}','${dt}','${reg.codigo_projeto}')">${esc(reg.codigo_projeto)}</span>`
+      }else if(isSP(f.funcao)){
+        cell=`<span class="badge badge-sp" title="${esc(f.funcao)}">SP</span>`
+      }else if(tAus==='ferias'){
+        cell=`<span class="badge badge-fer">FER</span>`
+      }else if(tAus==='ausente'){
+        cell=`<span class="badge badge-aus">AUS</span>`
+      }else if(!ausenciasMapeadas.has(f.matricula)&&f.situacao==='Ausente'){
+        cell=`<span class="badge badge-aus">AUS</span>`
+      }else if(!ausenciasMapeadas.has(f.matricula)&&f.situacao==='Ferias'){
+        cell=`<span class="badge badge-fer">FER</span>`
+      }else if(ab){
+        const c=String(ab.cod_abono).trim()
+        if(c==='21')cell=`<span class="badge badge-ncv">NCV</span>`
+        else if(['04','11','40'].includes(c))cell=`<span class="badge badge-af">AF</span>`
+        else cell=`<span class="badge badge-ab" title="${c}">AB</span>`
+      }else if(f.tipo_contrato!=='Intermitente'){
+        if(window._atestadoExt?.has(`${f.matricula}-${dt}`))
+          cell=`<span class="badge badge-at" title="Atestado médico — afastado (16º+ dia)">AT</span>`
+        else if(window._atestadosDias?.has(`${f.matricula}-${dt}`))
+          cell=`<span class="badge badge-at" style="opacity:.6" title="Atestado médico — dias 1-15 (empregador paga)">AT</span>`
+        else cell=`<span class="badge badge-el cp" onclick="abrirPop(event,'${f.matricula}','${dt}','')">EL</span>`
+      }else if(!mesFechado){
+        cell=`<span class="vazio" onclick="abrirPop(event,'${f.matricula}','${dt}','')">+</span>`
+      }
+      if(fteDay(f,d,dt,m0,selectedAno,presencas,abonos,ausencias,ausenciasMapeadas,window._atestadoExt))fteLn+=1/uteis
+      html+=`<td class="td-dia${fds?' fds':''}" data-mat="${f.matricula}" data-dt="${dt}" style="position:relative">${cell}</td>`
+    })
+    const fv=(fteLn*uteis).toFixed(1);totalFTE+=fteLn*uteis
+    html+=`<td class="td-fte">${fv}</td></tr>`
+  })
+
+  // tfoot
+  let tf=`<tfoot><tr><th class="th-nome" colspan="2">Presentes / dia</th>`
+  dias.forEach(d=>{const dt=dataStr(selectedAno,m0,d),fd=isFds(selectedAno,m0,d),n=ppd[dt]||0;tf+=`<th class="${fd?'fds':''} ${n>0&&fd?'fds-n':''}">${n||''}</th>`})
+  tf+=`<th class="th-fte">${totalFTE.toFixed(1)}</th></tr></tfoot>`
+  html+=`</tbody>${tf}</table>`
+  wrap.innerHTML=html
+}
+
+/* ── Bulk mode ───────────────────────────────────────────── */
+let bulkMode = false
+let bulkSelecionados = new Set()
+
+function toggleBulkMode() {
+  bulkMode = !bulkMode
+  bulkSelecionados.clear()
+  const bar = document.getElementById('bulk-bar')
+  const btn = document.getElementById('btn-bulk-toggle')
+  if(bar) bar.classList.toggle('active', bulkMode)
+  if(btn) { btn.style.background = bulkMode ? 'var(--accent-lt)' : ''; btn.style.color = bulkMode ? 'var(--accent)' : '' }
+  renderGrade()
+}
+
+function toggleSelecionado(mat) {
+  if(bulkSelecionados.has(mat)) bulkSelecionados.delete(mat)
+  else bulkSelecionados.add(mat)
+  atualizarBulkCount()
+  // Atualizar visual da linha
+  const rows = document.querySelectorAll(`[data-bulk-mat="${mat}"]`)
+  rows.forEach(r => r.classList.toggle('selected', bulkSelecionados.has(mat)))
+  const chk = document.querySelector(`input[data-chk="${mat}"]`)
+  if(chk) chk.checked = bulkSelecionados.has(mat)
+}
+
+function selecionarTodos() {
+  funcionarios.forEach(f => bulkSelecionados.add(f.matricula))
+  atualizarBulkCount()
+  document.querySelectorAll('input[data-chk]').forEach(c => { c.checked = true; c.closest('tr')?.classList.add('selected') })
+}
+
+function limparSelecao() {
+  bulkSelecionados.clear()
+  atualizarBulkCount()
+  document.querySelectorAll('input[data-chk]').forEach(c => { c.checked = false; c.closest('tr')?.classList.remove('selected') })
+}
+
+function atualizarBulkCount() {
+  const el = document.getElementById('bulk-count')
+  if(el) el.textContent = `${bulkSelecionados.size} colaborador${bulkSelecionados.size!==1?'es':''} selecionado${bulkSelecionados.size!==1?'s':''}`
+}
+
+async function aplicarBulk() {
+  if(!bulkSelecionados.size) { toast('Selecione ao menos um colaborador.','err'); return }
+  const proj = document.getElementById('bulk-proj')?.value
+  const de   = document.getElementById('bulk-de')?.value
+  const ate  = document.getElementById('bulk-ate')?.value
+  const modo = document.getElementById('bulk-modo')?.value
+  if(!proj||!de||!ate) { toast('Preencha projeto e datas.','err'); return }
+  if(de>ate) { toast('Data início maior que data fim.','err'); return }
+
+  // Montar registros: todos os dias do intervalo × colaboradores selecionados
+  const registros = []
+  const mats = [...bulkSelecionados]
+  let cur = new Date(de+'T00:00:00')
+  const end = new Date(ate+'T00:00:00')
+  while(cur <= end) {
+    const dt = cur.toISOString().substring(0,10)
+    const wd = cur.getDay()
+    if(wd!==0 && wd!==6) { // apenas dias úteis
+      mats.forEach(mat => registros.push({matricula:mat, data:dt, codigo_projeto:proj}))
+    }
+    cur.setDate(cur.getDate()+1)
+  }
+
+  if(!registros.length) { toast('Nenhum dia útil no intervalo selecionado.','err'); return }
+
+  const total = registros.length
+  if(!confirm(`Registrar ${total} alocações (${mats.length} colab. × ${total/mats.length} dias úteis)?\nModo: ${modo==='tudo'?'Sobrescrever tudo':'Só preencher vazios'}`)) return
+
+  setLoading(true)
+  const r = await post('/api/presencas/bulk', {registros, sobrescrever: modo==='tudo'})
+  setLoading(false)
+
+  if(r) {
+    toast(`✓ ${r.inseridos} registros criados${r.ignorados?' | '+r.ignorados+' já existiam':''}${r.erros?.length?' | '+r.erros.length+' erros':''}`, 'ok')
+    bulkSelecionados.clear()
+    toggleBulkMode()
+    loadGrade()
+  } else toast('Erro ao aplicar alocação.','err')
+}
+
+/* ── Popover ─────────────────────────────────────────────── */
+function abrirPop(ev, matricula, dt, codAtual) {
+  ev.stopPropagation(); if(mesFechado)return; fecharPopover()
+  const opts=projetos.map(p=>`<option value="${p.codigo}" ${p.codigo===codAtual?'selected':''}>${p.codigo} – ${p.nome.replace(/^\d+ - /,'')}</option>`).join('')
+  const pop=document.createElement('div'); pop.className='popover'
+  pop.innerHTML=`<select id="pop-sel"><option value="">— Limpar registro —</option>${opts}</select><div class="popover-btns"><button class="pop-ok" onclick="salvarPresenca('${matricula}','${dt}')">✓ Salvar</button><button class="pop-cancel" onclick="fecharPopover()">✕</button></div>`
+  pop.onclick=e=>e.stopPropagation()
+  const td=ev.currentTarget.closest('td')||ev.currentTarget.parentElement
+  td.appendChild(pop); popoverAtivo={td,matricula,dt}; pop.querySelector('select').focus()
+}
+function fecharPopover(ev) {
+  if(ev&&ev.target?.closest?.('.popover'))return
+  if(popoverAtivo){const p=popoverAtivo.td.querySelector('.popover');if(p)p.remove();popoverAtivo=null}
+}
+async function salvarPresenca(matricula, dt) {
+  const cod=document.getElementById('pop-sel')?.value||''; fecharPopover(); setLoading(true)
+  await post('/api/presencas',{matricula,data:dt,codigo_projeto:cod})
+  const presArr=await get(`/api/presencas?mes=${selectedMes}&ano=${selectedAno}&projeto=${encodeURIComponent(selectedProj)}`)
+  presencas={}; if(presArr)presArr.forEach(p=>{presencas[`${p.matricula}-${p.data}`]=p})
+  setLoading(false); toast(cod?`Registrado — projeto ${cod}`:'Registro removido',cod?'ok':''); renderGrade()
+}
+
+async function fecharMes() {
+  if(!confirm(`Fechar ${MESES[selectedMes]}/${selectedAno}?\n\nIsso bloqueará novas edições.`))return
+  await post('/api/fechamento',{mes:selectedMes,ano:selectedAno})
+  mesFechado=true; document.getElementById('badge-fechado').style.display='inline-flex'
+  document.getElementById('btn-fechar').style.display='none'; toast(`${MESES[selectedMes]}/${selectedAno} fechado!`,'ok'); renderGrade()
+}
+async function syncTotvs(){toast('Sincronização iniciada…');setTimeout(()=>toast(`Sync concluído — ${MESES[selectedMes]}/${selectedAno}`,'ok'),2500)}
+
+function setLoading(on){
+  let ov=document.getElementById('lding'); const ca=document.getElementById('content-area')
+  if(on){if(!ov){ov=document.createElement('div');ov.id='lding';ov.className='loading-ov';ov.innerHTML='<div class="spin"></div>Carregando…';ca.appendChild(ov)}}
+  else{if(ov)ov.remove()}
+}
+
+/* ═══════════════════════════════════════════════════════════
+   EXPORTAÇÃO
+═══════════════════════════════════════════════════════════ */
+function renderExport(){
+  const projOpts=projetos.map(p=>`<option value="${p.codigo}">${p.codigo} — ${p.nome.replace(/^\d+ - /,'')}</option>`).join('')
+  document.getElementById('content-area').innerHTML=`
+  <div style="padding:20px;max-width:700px;overflow-y:auto;flex:1">
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">${MESES[selectedMes]} / ${selectedAno}</p>
+
+    <!-- Importação em massa -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hd"><span class="card-hd-title">Importação — Alocação em massa (.xlsx)</span></div>
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px">
+          Colunas: <strong>Matrícula | Data | Projeto</strong> (linha por dia) ou <strong>Matrícula | Dt Início | Dt Fim | Projeto</strong> (intervalo — expande para dias úteis).<br>
+          Datas em <code>DD/MM/AAAA</code> ou <code>AAAA-MM-DD</code>.
+        </p>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="flex:1">
+            <div class="upload-zone" id="upload-aloc-zone" onclick="document.getElementById('file-aloc').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDropAloc(event)">
+              <input type="file" id="file-aloc" accept=".xlsx,.xls,.csv" onchange="handleFileAloc(this.files[0])">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <div style="font-size:13px;color:var(--muted)">Clique ou arraste o arquivo</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:3px">.xlsx · .xls · .csv</div>
+            </div>
+          </div>
+          <div style="width:210px;display:flex;flex-direction:column;gap:8px">
+            <div class="form-group" style="margin:0">
+              <label class="form-lbl">Modo de preenchimento</label>
+              <select class="form-sel" id="aloc-modo">
+                <option value="vazio">Só preencher vazios (+/EL)</option>
+                <option value="tudo">Sobrescrever tudo</option>
+              </select>
+            </div>
+            <div style="font-size:11px;color:var(--muted);background:var(--bg);padding:8px;border-radius:var(--r)">
+              <strong>Só vazios:</strong> não toca em ponto automático do TOTVS<br><br>
+              <strong>Sobrescrever:</strong> substitui qualquer registro existente
+            </div>
+          </div>
+        </div>
+        <div id="aloc-preview" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- Exportação -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hd"><span class="card-hd-title">Grade de Presença — Excel (.xlsx)</span></div>
+      <div class="card-body"><p style="font-size:13px;color:var(--muted);margin-bottom:12px">Exporta os dados do projeto/mês carregado na grade. Carregue a grade primeiro.</p>
+        <button class="btn btn-p" onclick="exportGradeExcel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg> Baixar grade — Excel</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-hd-title">Impressão / PDF (A3 paisagem)</span></div>
+      <div class="card-body"><p style="font-size:13px;color:var(--muted);margin-bottom:12px">Selecione "Salvar como PDF" e papel A3 paisagem no diálogo de impressão.</p>
+        <button class="btn btn-o" onclick="navigate('grade');setTimeout(()=>window.print(),500)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Imprimir grade (PDF)
+        </button>
+      </div>
+    </div>
+  </div>`
+}
+
+function exportGradeExcel(){
+  if(!funcionarios.length){toast('Carregue a grade primeiro.','err');navigate('grade');return}
+  const m0=selectedMes-1,dias=diasArr(selectedAno,m0),uteis=diasUteis(selectedAno,m0)
+  const header=['Matrícula','Nome','Função','Situação','Contrato']
+  dias.forEach(d=>{const w=new Date(selectedAno,m0,d).getDay();header.push(`${String(d).padStart(2,'0')}(${SEMANA[w].substring(0,3)}`)})
+  header.push('FTE')
+  const rows=[header]
+  funcionarios.forEach(f=>{
+    const row=[f.matricula,f.nome,f.funcao,f.situacao,f.tipo_contrato]; let fte=0
+    dias.forEach(d=>{
+      const dt=dataStr(selectedAno,m0,d),fds=isFds(selectedAno,m0,d)
+      const reg=presencas[`${f.matricula}-${dt}`],tAus=ausencias[`${f.matricula}-${dt}`],ab=abonos[`${f.matricula}-${dt}`]
+      const dem=f.dt_demissao&&f.dt_demissao>'2000-01-01'?f.dt_demissao:null
+      const nc=(f.dt_admissao&&dt<f.dt_admissao)||(dem&&dt>dem)
+      let b=''
+      if(nc)b='NC'
+      else if(fds&&(tAus==='ausente'||(!ausenciasMapeadas.has(f.matricula)&&f.situacao==='Ausente')))b='AUS'
+      else if(fds&&reg?.codigo_projeto)b='HE'
+      else if(fds)b='FDS'
+      else if(reg?.codigo_projeto)b=reg.codigo_projeto
+      else if(isSP(f.funcao))b='SP'
+      else if(tAus==='ferias')b='FER'
+      else if(tAus==='ausente')b='AUS'
+      else if(!ausenciasMapeadas.has(f.matricula)&&f.situacao==='Ausente')b='AUS'
+      else if(!ausenciasMapeadas.has(f.matricula)&&f.situacao==='Ferias')b='FER'
+      else if(ab){const c=String(ab.cod_abono).trim();b=c==='21'?'NCV':['04','11','40'].includes(c)?'AF':'AB'}
+      else if(f.tipo_contrato!=='Intermitente')b='EL'
+      row.push(b)
+      if(fteDay(f,d,dt,m0,selectedAno,presencas,abonos,ausencias,ausenciasMapeadas,window._atestadoExt))fte+=1/uteis
+    })
+    row.push(+(fte*uteis).toFixed(1));rows.push(row)
+  })
+  const ws=XLSX.utils.aoa_to_sheet(rows),wb=XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb,ws,`Grade ${selectedProj}`)
+  XLSX.writeFile(wb,`Grade_${selectedProj}_${MESES[selectedMes]}${selectedAno}.xlsx`)
+  toast('Excel gerado!','ok')
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AFASTAMENTOS MANUAIS
+═══════════════════════════════════════════════════════════ */
+let afastamentosData = []
+let uploadPreview = []
+
+/* ═══════════════════════════════════════════════════════════
+   ADMIN
+═══════════════════════════════════════════════════════════ */
+async function renderAdmin(){
+  const ca=document.getElementById('content-area')
+  ca.innerHTML='<div style="padding:20px;flex:1;overflow-y:auto"><div style="font-size:13px;color:var(--muted)">Carregando relógios…</div></div>'
+  let rels=await get('/api/relogios')
+  if(!rels)rels=[
+    {relogio:'001',descricao:'SP-ATIBAIA ADM',codigo_projeto:null},{relogio:'002',descricao:'SP-ATIBAIA FAB',codigo_projeto:null},
+    {relogio:'003',descricao:'SP-SJC_REVAP 01',codigo_projeto:'183'},{relogio:'004',descricao:'SP-SJC_REVAP 02',codigo_projeto:'183'},
+    {relogio:'005',descricao:'SP-SJC_REVAP 03',codigo_projeto:'183'},{relogio:'006',descricao:'SP-SJC_REVAP 04',codigo_projeto:'183'},
+    {relogio:'007',descricao:'SP-SJC_REVAP 05',codigo_projeto:'183'},{relogio:'008',descricao:'SP-SJC_REVAP 06',codigo_projeto:'183'},
+    {relogio:'101',descricao:'PA-S11D_NU1',codigo_projeto:'43'},{relogio:'102',descricao:'PA-S11D_USINA15',codigo_projeto:'43'},
+    {relogio:'103',descricao:'PA-S11D_USINA16',codigo_projeto:'43'},{relogio:'105',descricao:'PA-S11D_NU2',codigo_projeto:'43'},
+    {relogio:'106',descricao:'PA-S11D_NU3',codigo_projeto:'43'},{relogio:'107',descricao:'PA-HYDRO_REL01',codigo_projeto:'225'},
+    {relogio:'201',descricao:'ADM-RJ',codigo_projeto:null},{relogio:'202',descricao:'CSN UPV MEC',codigo_projeto:'74'},
+    {relogio:'203',descricao:'CSN UPV VUL',codigo_projeto:'135'},{relogio:'204',descricao:'CSN UPV DES',codigo_projeto:'131'},
+    {relogio:'303',descricao:'PORTO NORTE 01',codigo_projeto:'159'},{relogio:'305',descricao:'PORTO NORTE 02',codigo_projeto:'159'},
+    {relogio:'403',descricao:'REFAP 01',codigo_projeto:'208'},{relogio:'404',descricao:'REFAP 02',codigo_projeto:'208'},
+    {relogio:'405',descricao:'REFAP 03',codigo_projeto:'208'},{relogio:'406',descricao:'REFAP 04',codigo_projeto:'208'},
+    {relogio:'407',descricao:'REFAP 05',codigo_projeto:'208'},{relogio:'408',descricao:'REFAP 06',codigo_projeto:'208'},
+    {relogio:'501',descricao:'ULTRACARGO SUAPE',codigo_projeto:'141'},{relogio:'502',descricao:'TRANSPETRO SUAPE 01',codigo_projeto:'194'},
+    {relogio:'503',descricao:'TRANSPETRO SUAPE 02',codigo_projeto:'194'},{relogio:'504',descricao:'GALPAO-PE',codigo_projeto:null},
+    {relogio:'702',descricao:'BRAVA RN',codigo_projeto:'214'}
+  ]
+  relogiosData=rels; renderAdminHTML()
+}
+
+function renderAdminHTML(){
+  const pend=relogiosData.filter(r=>!r.codigo_projeto)
+  const ca=document.getElementById('content-area')
+  ca.innerHTML=`<div style="padding:20px;flex:1;overflow-y:auto">
+  ${pend.length?`<div class="card" style="margin-bottom:14px;border-color:#fca5a5">
+    <div class="card-hd" style="background:#fff5f5"><span class="card-hd-title" style="color:#991b1b">⚠ Relógios sem mapeamento (${pend.length})</span></div>
+    <table class="table"><thead><tr><th>Relógio</th><th>Descrição</th><th></th></tr></thead><tbody>
+    ${pend.map(r=>`<tr><td><span class="pill pill-r">${r.relogio}</span></td><td>${r.descricao}</td><td><button class="btn btn-o" style="font-size:11px;padding:4px 9px" onclick="abrirModalRel('${r.relogio}','${r.descricao}','')">Mapear</button></td></tr>`).join('')}
+    </tbody></table></div>`:`<div class="card" style="margin-bottom:14px;border-color:#6ee7b7"><div class="card-body" style="color:#065f46;font-size:13px">✓ Todos os relógios mapeados.</div></div>`}
+  <div class="card">
+    <div class="card-hd"><span class="card-hd-title">Todos os relógios (${relogiosData.length})</span>
+      <input type="text" class="inp-search" placeholder="Buscar…" oninput="filtrarRels(this.value)" style="width:160px">
+    </div>
+    <table class="table"><thead><tr><th>Relógio</th><th>Descrição</th><th>Projeto</th><th>Status</th><th></th></tr></thead>
+    <tbody id="rel-body">${relBodyHTML(relogiosData)}</tbody></table>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-hd"><span class="card-hd-title">Funcionários com pendências no ERP</span></div>
+    <table class="table"><thead><tr><th>Matrícula</th><th>Nome</th><th>Pendência</th></tr></thead><tbody>
+      <tr><td>010717</td><td>RODRIGO BERTAZZO</td><td><code style="font-size:11px;background:#f3f4f6;padding:2px 6px;border-radius:4px">codigo_projeto=#N/D</code> — corrigir no TOTVS</td></tr>
+      <tr><td>011811</td><td>LUIZ ANDRADE</td><td>Aparece no proj. 183 mas ausente do HC oficial</td></tr>
+      <tr><td>011812</td><td>PAULO ARMANDO</td><td>Aparece no proj. 183 mas ausente do HC oficial</td></tr>
+    </tbody></table>
+  </div></div>`
+}
+
+function relBodyHTML(lista){
+  return lista.map(r=>{
+    const pn=r.codigo_projeto?(projetos.find(p=>p.codigo===r.codigo_projeto)?.nome.replace(/^\d+ - /,'')||r.codigo_projeto):null
+    return`<tr><td><span class="pill ${r.codigo_projeto?'pill-b':'pill-r'}">${r.relogio}</span></td><td>${r.descricao}</td>
+    <td>${pn?`<span class="pill pill-g">${r.codigo_projeto}</span> ${pn}`:'<span style="color:var(--muted)">—</span>'}</td>
+    <td>${r.codigo_projeto?'<span class="bs-closed">Mapeado</span>':'<span class="bs-open">Pendente</span>'}</td>
+    <td><button class="btn btn-g" style="font-size:11px;padding:3px 7px" onclick="abrirModalRel('${r.relogio}','${r.descricao}','${r.codigo_projeto||''}')">Editar</button></td></tr>`
+  }).join('')
+}
+function filtrarRels(q){const l=q?relogiosData.filter(r=>r.relogio.includes(q)||r.descricao.toLowerCase().includes(q.toLowerCase())):relogiosData;const b=document.getElementById('rel-body');if(b)b.innerHTML=relBodyHTML(l)}
+function abrirModalRel(id,desc,proj){document.getElementById('mr-id').value=id;document.getElementById('mr-desc').value=desc;document.getElementById('mr-proj').value=proj||'';openModal('modal-rel')}
+function salvarRelogio(){const id=document.getElementById('mr-id').value,proj=document.getElementById('mr-proj').value,rel=relogiosData.find(r=>r.relogio===id);if(rel)rel.codigo_projeto=proj||null;closeModal('modal-rel');toast(proj?`Relógio ${id} → ${proj}`:`Relógio ${id} desmapeado`,proj?'ok':'');renderAdminHTML()}
+
+/* ── Start ───────────────────────────────────────────────── */
+document.addEventListener('click', fecharPopover)
+init()
+</script>
+</body>
+</html>
