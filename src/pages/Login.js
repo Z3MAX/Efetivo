@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 
-export default function Login() {
+export default function Login({ onLogin }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
@@ -11,8 +11,12 @@ export default function Login() {
     e.preventDefault()
     setErro('')
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
-    if (error) setErro('E-mail ou senha incorretos.')
+    try {
+      const { user } = await api.login(email, senha)
+      onLogin(user)
+    } catch {
+      setErro('E-mail ou senha incorretos.')
+    }
     setLoading(false)
   }
 

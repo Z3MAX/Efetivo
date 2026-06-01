@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react'
-import { supabase } from './lib/supabase'
+import { api } from './lib/api'
 import Login from './pages/Login'
 import EfetivoGrade from './pages/EfetivoGrade'
 
 export default function App() {
-  const [session, setSession] = useState(undefined)
+  const [user, setUser] = useState(undefined)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => setSession(s))
-    return () => subscription.unsubscribe()
+    setUser(api.getUser())
   }, [])
 
-  if (session === undefined) return <div style={{ padding: 40 }}>Carregando...</div>
-  if (!session) return <Login />
-  return <EfetivoGrade session={session} />
+  function onLogin(u) {
+    setUser(u)
+  }
+
+  function onLogout() {
+    api.logout()
+    setUser(null)
+  }
+
+  if (user === undefined) return <div style={{ padding: 40 }}>Carregando...</div>
+  if (!user) return <Login onLogin={onLogin} />
+  return <EfetivoGrade user={user} onLogout={onLogout} />
 }

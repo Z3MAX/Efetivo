@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -14,7 +14,7 @@ function fimDeSemana(ano, mes, dia) {
   return d === 0 || d === 6
 }
 
-export default function EfetivoGrade({ session }) {
+export default function EfetivoGrade({ user, onLogout }) {
   const hoje = new Date()
   const [ano, setAno]           = useState(hoje.getFullYear())
   const [mes, setMes]           = useState(hoje.getMonth())
@@ -22,71 +22,66 @@ export default function EfetivoGrade({ session }) {
   const [filtroProjeto, setFiltroProjeto] = useState('')
   const [busca, setBusca]       = useState('')
   const [funcionarios, setFuncionarios] = useState([])
-  const [presencas, setPresencas]       = useState({})   // { 'MAT-YYYY-MM-DD': { codigo_projeto, fonte } }
-  const [editando, setEditando] = useState(null)         // 'MAT-YYYY-MM-DD'
+  const [presencas, setPresencas]       = useState({})
+  const [editando, setEditando] = useState(null)
   const [salvando, setSalvando] = useState(false)
   const [fechado, setFechado]   = useState(false)
 
   const dias = diasDoMes(ano, mes)
 
-  // Carrega projetos para o dropdown
   useEffect(() => {
-    supabase.from('efetivo_projetos').select('codigo,nome').eq('ativo', true).order('codigo')
-      .then(({ data }) => setProjetos(data || []))
+    api.projetos().then(setProjetos).catch(console.error)
   }, [])
 
-  // Verifica se mês está fechado
   useEffect(() => {
-    supabase.from('efetivo_fechamento').select('id').eq('mes', mes + 1).eq('ano', ano).maybeSingle()
-      .then(({ data }) => setFechado(!!data?.id))
+    api.fechamento({ mes: mes + 1, ano })
+      .then(({ fechado }) => setFechado(fechado))
+      .catch(console.error)
   }, [mes, ano])
 
-  // Carrega funcionários filtrados
   useEffect(() => {
-    let q = supabase.from('efetivo_funcionarios')
-      .select('matricula,nome,funcao,codigo_projeto')
-      .in('situacao', ['Ativo','Ausente','Ferias'])
-      .order('nome')
-    if (filtroProjeto) q = q.eq('codigo_projeto', filtroProjeto)
-    q.then(({ data }) => setFuncionarios(data || []))
-  }, [filtroProjeto])
+    const params = { mes: mes + 1, ano }
+    if (filtroProjeto) params.projeto = filtroProjeto
+    api.funcionarios(params)
+      .then(setFuncionarios)
+      .catch(console.error)
+  }, [filtroProjeto, mes, ano])
 
-  // Carrega presenças do mês
   const carregarPresencas = useCallback(() => {
-    const de  = `${ano}-${String(mes + 1).padStart(2,'0')}-01`
-    const ate = `${ano}-${String(mes + 1).padStart(2,'0')}-${String(dias.length).padStart(2,'0')}`
-    supabase.from('efetivo_presenca').select('matricula,data,codigo_projeto,fonte')
-      .gte('data', de).lte('data', ate)
-      .then(({ data }) => {
+    const params = { mes: mes + 1, ano }
+    if (filtroProjeto) params.projeto = filtroProjeto
+    api.presencas(params)
+      .then(rows => {
         const mapa = {}
-        ;(data || []).forEach(r => { mapa[`${r.matricula}-${r.data}`] = r })
+        rows.forEach(r => { mapa[`${r.matricula}-${r.data}`] = r })
         setPresencas(mapa)
       })
-  }, [ano, mes, dias.length])
+      .catch(console.error)
+  }, [ano, mes, filtroProjeto])
 
   useEffect(() => { carregarPresencas() }, [carregarPresencas])
 
   async function salvarPresenca(matricula, dataStr, codigoProjeto) {
     if (fechado) return
     setSalvando(true)
-    await supabase.from('efetivo_presenca').upsert({
-      matricula,
-      data: dataStr,
-      codigo_projeto: codigoProjeto || null,
-      fonte: 'manual',
-      usuario_input: session.user.email,
-    }, { onConflict: 'matricula,data', ignoreDuplicates: false })
-    await carregarPresencas()
+    try {
+      await api.salvarPresenca({ matricula, data: dataStr, codigo_projeto: codigoProjeto || null })
+      await carregarPresencas()
+    } catch (e) {
+      alert(e.message)
+    }
     setEditando(null)
     setSalvando(false)
   }
 
   async function fecharMes() {
     if (!window.confirm(`Fechar ${MESES[mes]}/${ano}? Isso bloqueará novas edições.`)) return
-    await supabase.from('efetivo_fechamento').insert({
-      mes: mes + 1, ano, fechado_por: session.user.email
-    })
-    setFechado(true)
+    try {
+      await api.fecharMes(mes + 1, ano)
+      setFechado(true)
+    } catch (e) {
+      alert(e.message)
+    }
   }
 
   const funcsFiltradas = funcionarios.filter(f =>
@@ -100,8 +95,8 @@ export default function EfetivoGrade({ session }) {
       <div style={s.header}>
         <span style={s.logo}>RTT · Efetivo</span>
         <div style={s.headerRight}>
-          <span style={s.userEmail}>{session.user.email}</span>
-          <button style={s.btnSair} onClick={() => supabase.auth.signOut()}>Sair</button>
+          <span style={s.userEmail}>{user.email}</span>
+          <button style={s.btnSair} onClick={onLogout}>Sair</button>
         </div>
       </div>
 
