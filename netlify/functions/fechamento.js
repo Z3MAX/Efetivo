@@ -1,14 +1,22 @@
 const { neon } = require('@neondatabase/serverless');
+const jwt = require('jsonwebtoken');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Content-Type': 'application/json',
 };
 
+function verificarAuth(event) {
+  const auth = (event.headers.authorization || event.headers.Authorization || '').replace('Bearer ', '');
+  if (!auth) return null;
+  try { return jwt.verify(auth, process.env.JWT_SECRET); } catch { return null; }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS };
+  if (!verificarAuth(event)) return { statusCode: 401, headers: CORS, body: JSON.stringify({ erro: 'Não autenticado' }) };
 
   const sql = neon(process.env.DATABASE_URL);
 

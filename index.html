@@ -360,9 +360,94 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   .grade-table th, .grade-table td { font-size: 8px; padding: 2px 3px; }
   @page { size: A3 landscape; margin: 10mm; }
 }
+
+/* ─── Login ─── */
+.login-overlay {
+  position: fixed; inset: 0; background: #f0f2f5;
+  display: flex; align-items: center; justify-content: center; z-index: 9000;
+}
+.login-overlay.hidden { display: none; }
+.login-card {
+  background: #fff; border-radius: 14px; padding: 44px 40px; width: 360px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.10); display: flex; flex-direction: column; gap: 14px;
+}
+.login-logo { font-size: 32px; font-weight: 800; color: #c8000a; letter-spacing: 3px; text-align: center; }
+.login-title { text-align: center; font-size: 18px; color: #333; font-weight: 600; margin-top: -4px; }
+.login-sub { text-align: center; font-size: 12px; color: #9ca3af; margin-top: -6px; }
+.login-input {
+  padding: 11px 13px; border-radius: 8px; border: 1px solid #ddd;
+  font-size: 14px; outline: none; transition: border-color .15s;
+}
+.login-input:focus { border-color: #c8000a; box-shadow: 0 0 0 3px rgba(200,0,10,.08); }
+.login-btn {
+  padding: 12px; border-radius: 8px; background: #c8000a; color: #fff;
+  border: none; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .15s;
+}
+.login-btn:hover { background: #a80009; }
+.login-btn:disabled { opacity: .6; cursor: default; }
+.login-erro { color: #c8000a; font-size: 13px; text-align: center; min-height: 18px; }
+.btn-logout {
+  margin-top: 8px; width: 100%; padding: 5px 0; border-radius: 5px;
+  border: 1px solid rgba(255,255,255,.2); background: transparent;
+  color: rgba(255,255,255,.5); font-size: 11px; cursor: pointer; transition: all .15s;
+}
+.btn-logout:hover { background: rgba(255,255,255,.1); color: rgba(255,255,255,.8); }
 </style>
 </head>
 <body>
+
+<!-- ─── Login Overlay ─── -->
+<div id="login-overlay" class="login-overlay">
+  <form class="login-card" onsubmit="doLogin(event)">
+    <div class="login-logo">RTT</div>
+    <h2 class="login-title">Efetivo</h2>
+    <p class="login-sub">Controle de presença &amp; FTE</p>
+    <input type="email" id="login-email" class="login-input" placeholder="E-mail" required autocomplete="username">
+    <input type="password" id="login-senha" class="login-input" placeholder="Senha" required autocomplete="current-password">
+    <div id="login-erro" class="login-erro"></div>
+    <button type="submit" class="login-btn" id="login-btn">Entrar</button>
+  </form>
+</div>
+
+<!-- ─── Modal usuário ─── -->
+<div class="modal-overlay" id="modal-usuario" style="display:none" onclick="closeModal('modal-usuario')">
+  <div class="modal" onclick="event.stopPropagation()" style="width:420px">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-usuario-title">Novo usuário</span>
+      <button class="btn btn-ghost" style="padding:4px" onclick="closeModal('modal-usuario')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="mu-email-original">
+      <div class="form-group">
+        <label class="form-label">Nome completo</label>
+        <input class="form-input" id="mu-nome" type="text" placeholder="Nome completo">
+      </div>
+      <div class="form-group">
+        <label class="form-label">E-mail</label>
+        <input class="form-input" id="mu-email" type="email" placeholder="usuario@rttshop.com.br">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Senha <span id="mu-senha-hint" style="color:var(--text-muted);font-weight:400">(deixe em branco para manter)</span></label>
+        <input class="form-input" id="mu-senha" type="password" placeholder="Senha">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Perfil</label>
+        <select class="form-select" id="mu-perfil">
+          <option value="usuario">Usuário</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+      <div id="mu-erro" style="color:#c8000a;font-size:12px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-usuario')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarUsuario()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <div class="app">
 
 <!-- ─── Sidebar ─── -->
@@ -390,10 +475,15 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
       Relógios &amp; Projetos
     </div>
+    <div class="nav-item" id="nav-usuarios" data-view="usuarios" onclick="navigate('usuarios')" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Gerenciar Usuários
+    </div>
   </div>
   <div class="sidebar-footer">
-    <div class="user-email" id="user-email">thiego.silva@rttshop.com.br</div>
-    <div>RTT Soluções Industriais</div>
+    <div class="user-email" id="user-email"></div>
+    <div style="font-size:10px;opacity:.5;margin-top:2px">RTT Soluções Industriais</div>
+    <button class="btn-logout" onclick="doLogout()">↩ Sair</button>
   </div>
 </nav>
 
@@ -528,7 +618,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 /* ═══════════════════════════════════════════════════════
    ESTADO GLOBAL
 ═══════════════════════════════════════════════════════ */
-const API = '';  // mesma origem Flask
+const API = '';
 let currentView = 'dashboard';
 let selectedMes = 4, selectedAno = 2026;
 let selectedProj = 'all';
@@ -536,6 +626,75 @@ let gradeData = { funcionarios: [], presencas: [], abonos: [], ausencias: [] };
 let filterSearch = '';
 let filterSituacao = '';
 let editTarget = null;
+let _currentUser = null;
+
+/* ─── Token / Sessão ─── */
+function getToken() { return localStorage.getItem('efetivo_token'); }
+function getCurrentUser() { try { return JSON.parse(localStorage.getItem('efetivo_user')); } catch { return null; } }
+function isAdmin() { const u = getCurrentUser(); return u && u.perfil === 'admin'; }
+
+function initSession() {
+  const token = getToken();
+  if (!token) { showLogin(); return; }
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (payload.exp * 1000 < Date.now()) { clearSession(); showLogin(); return; }
+    _currentUser = getCurrentUser();
+    showApp();
+  } catch { clearSession(); showLogin(); }
+}
+
+function clearSession() {
+  localStorage.removeItem('efetivo_token');
+  localStorage.removeItem('efetivo_user');
+  _currentUser = null;
+}
+
+function showLogin() {
+  document.getElementById('login-overlay').classList.remove('hidden');
+}
+
+function showApp() {
+  document.getElementById('login-overlay').classList.add('hidden');
+  const u = getCurrentUser();
+  if (u) document.getElementById('user-email').textContent = u.email;
+  if (isAdmin()) document.getElementById('nav-usuarios').style.display = 'flex';
+  renderView();
+}
+
+/* ─── Login / Logout ─── */
+async function doLogin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('login-btn');
+  const erroEl = document.getElementById('login-erro');
+  const email = document.getElementById('login-email').value;
+  const senha = document.getElementById('login-senha').value;
+  btn.disabled = true; btn.textContent = 'Entrando…'; erroEl.textContent = '';
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, senha })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.erro || 'Erro ao entrar');
+    localStorage.setItem('efetivo_token', data.token);
+    localStorage.setItem('efetivo_user', JSON.stringify(data.user));
+    _currentUser = data.user;
+    showApp();
+  } catch(err) {
+    erroEl.textContent = err.message || 'E-mail ou senha incorretos.';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Entrar';
+  }
+}
+
+function doLogout() {
+  if (!confirm('Deseja sair do sistema?')) return;
+  clearSession();
+  document.getElementById('nav-usuarios').style.display = 'none';
+  showLogin();
+}
 
 const PROJETOS = {
   '183': 'Petrobras REVAP', '208': 'Petrobras REFAP',
@@ -552,7 +711,10 @@ const ABONO_CUSTO = ['21','04','11','40','41','43','44'];
 ═══════════════════════════════════════════════════════ */
 async function apiFetch(path) {
   try {
-    const r = await fetch(API + path);
+    const r = await fetch(API + path, {
+      headers: { 'Authorization': 'Bearer ' + (getToken() || '') }
+    });
+    if (r.status === 401) { clearSession(); showLogin(); return null; }
     if (!r.ok) throw new Error(r.statusText);
     return await r.json();
   } catch(e) {
@@ -563,9 +725,22 @@ async function apiFetch(path) {
 async function apiPost(path, body) {
   try {
     const r = await fetch(API + path, {
-      method: 'POST', headers: {'Content-Type':'application/json'},
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (getToken() || '') },
       body: JSON.stringify(body)
     });
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+async function apiRequest(method, path, body) {
+  try {
+    const r = await fetch(API + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (getToken() || '') },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (r.status === 401) { clearSession(); showLogin(); return null; }
     return await r.json();
   } catch(e) { return null; }
 }
@@ -578,7 +753,7 @@ function navigate(view) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.view === view);
   });
-  const titles = { dashboard:'Dashboard', grade:'Grade de Presença', export:'Exportação', admin:'Relógios & Projetos' };
+  const titles = { dashboard:'Dashboard', grade:'Grade de Presença', export:'Exportação', admin:'Relógios & Projetos', usuarios:'Gerenciar Usuários' };
   document.getElementById('topbar-title').textContent = titles[view] || view;
   renderView();
 }
@@ -1385,10 +1560,125 @@ function renderView() {
   else if(currentView === 'grade') renderGradeView();
   else if(currentView === 'export') renderExportView();
   else if(currentView === 'admin') renderAdminView();
+  else if(currentView === 'usuarios') renderUsuariosView();
+}
+
+/* ═══════════════════════════════════════════════════════
+   PAINEL DE USUÁRIOS (Admin only)
+═══════════════════════════════════════════════════════ */
+let _usuarios = [];
+
+async function renderUsuariosView() {
+  const el = document.getElementById('content-area');
+  el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:200px"><span style="color:var(--text-muted)">Carregando usuários…</span></div>`;
+  const data = await apiFetch('/api/usuarios');
+  if (!data) {
+    el.innerHTML = `<div style="padding:32px;text-align:center;color:#dc2626">Sem permissão ou erro ao carregar usuários.</div>`;
+    return;
+  }
+  _usuarios = data;
+  el.innerHTML = `
+    <div style="max-width:760px;margin:0 auto">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Usuários do sistema</span>
+          <button class="btn btn-primary" onclick="abrirModalUsuario(null)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Novo usuário
+          </button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f9fafb">
+              <th style="padding:10px 16px;text-align:left;font-weight:500;color:var(--text-muted);border-bottom:1px solid var(--border)">Nome</th>
+              <th style="padding:10px 16px;text-align:left;font-weight:500;color:var(--text-muted);border-bottom:1px solid var(--border)">E-mail</th>
+              <th style="padding:10px 16px;text-align:center;font-weight:500;color:var(--text-muted);border-bottom:1px solid var(--border)">Perfil</th>
+              <th style="padding:10px 16px;border-bottom:1px solid var(--border)"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${_usuarios.map(u => `
+              <tr style="border-bottom:1px solid #f3f4f6">
+                <td style="padding:10px 16px">${esc(u.nome || '—')}</td>
+                <td style="padding:10px 16px;color:var(--text-muted)">${esc(u.email)}</td>
+                <td style="padding:10px 16px;text-align:center">
+                  <span style="padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;
+                    background:${u.perfil==='admin'?'#fef3c7':'#e0f2fe'};
+                    color:${u.perfil==='admin'?'#92400e':'#0369a1'}">
+                    ${u.perfil === 'admin' ? 'Admin' : 'Usuário'}
+                  </span>
+                </td>
+                <td style="padding:8px 16px;text-align:right">
+                  <button class="btn btn-outline" style="font-size:11px;margin-right:4px" onclick="abrirModalUsuario('${esc(u.email)}')">Editar</button>
+                  <button class="btn btn-danger" style="font-size:11px" onclick="excluirUsuario('${esc(u.email)}')">Remover</button>
+                </td>
+              </tr>
+            `).join('')}
+            ${_usuarios.length === 0 ? '<tr><td colspan="4" style="padding:32px;text-align:center;color:var(--text-muted)">Nenhum usuário cadastrado.</td></tr>' : ''}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function abrirModalUsuario(email) {
+  const u = email ? _usuarios.find(x => x.email === email) : null;
+  document.getElementById('modal-usuario-title').textContent = u ? 'Editar usuário' : 'Novo usuário';
+  document.getElementById('mu-nome').value  = u ? (u.nome || '') : '';
+  document.getElementById('mu-email').value = u ? u.email : '';
+  document.getElementById('mu-email').readOnly = !!u;
+  document.getElementById('mu-email').style.background = u ? '#f9fafb' : '';
+  document.getElementById('mu-perfil').value = u ? u.perfil : 'usuario';
+  document.getElementById('mu-senha').value = '';
+  document.getElementById('mu-erro').textContent = '';
+  document.getElementById('mu-email-original').value = u ? u.email : '';
+  document.getElementById('mu-senha-hint').style.display = u ? 'inline' : 'none';
+  document.getElementById('modal-usuario').style.display = 'flex';
+}
+
+async function salvarUsuario() {
+  const emailOriginal = document.getElementById('mu-email-original').value;
+  const nome   = document.getElementById('mu-nome').value.trim();
+  const email  = document.getElementById('mu-email').value.trim();
+  const perfil = document.getElementById('mu-perfil').value;
+  const senha  = document.getElementById('mu-senha').value;
+  const erroEl = document.getElementById('mu-erro');
+  erroEl.textContent = '';
+
+  if (!email) { erroEl.textContent = 'E-mail é obrigatório.'; return; }
+  if (!emailOriginal && !senha) { erroEl.textContent = 'Senha é obrigatória para novo usuário.'; return; }
+
+  const body = { nome, email, perfil };
+  if (senha) body.senha = senha;
+
+  let r;
+  if (emailOriginal) {
+    body.email_original = emailOriginal;
+    r = await apiRequest('PATCH', '/api/usuarios', body);
+  } else {
+    r = await apiPost('/api/usuarios', body);
+  }
+
+  if (!r || r.erro) { erroEl.textContent = r?.erro || 'Erro ao salvar usuário.'; return; }
+  closeModal('modal-usuario');
+  toast(emailOriginal ? 'Usuário atualizado!' : 'Usuário criado!', 'success');
+  renderUsuariosView();
+}
+
+async function excluirUsuario(email) {
+  if (!confirm(`Remover o usuário ${email}?`)) return;
+  const r = await apiRequest('DELETE', '/api/usuarios', { email });
+  if (!r || r.erro) { toast(r?.erro || 'Erro ao remover usuário.', 'error'); return; }
+  toast('Usuário removido.', 'success');
+  renderUsuariosView();
 }
 
 /* ─── Init ─── */
-renderView();
+initSession();
 </script>
 </body>
 </html>
