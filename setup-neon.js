@@ -161,6 +161,31 @@ async function main() {
     ON CONFLICT (relogio) DO NOTHING
   `;
   console.log('✅ Relógios inseridos!');
+  // Abonos
+  await sql`
+    CREATE TABLE IF NOT EXISTS efetivo_abonos (
+      matricula  TEXT NOT NULL,
+      data       DATE NOT NULL,
+      cod_abono  TEXT,
+      synced_at  TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (matricula, data)
+    )
+  `;
+  console.log('✅ Tabela efetivo_abonos criada!');
+
+  // Ausências TOTVS
+  await sql`
+    CREATE TABLE IF NOT EXISTS efetivo_ausencias (
+      id        BIGSERIAL PRIMARY KEY,
+      matricula TEXT NOT NULL,
+      dt_inicio DATE NOT NULL,
+      dt_fim    DATE,
+      motivo    TEXT,
+      synced_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+  console.log('✅ Tabela efetivo_ausencias criada!');
+
   console.log('\n🎉 Neon DB configurado com sucesso!');
 }
 

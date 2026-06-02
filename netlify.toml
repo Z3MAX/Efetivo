@@ -1,6 +1,6 @@
 [build]
-  command   = "npm run build"
-  publish   = "build"
+  command   = "mkdir -p site && cp index.html site/"
+  publish   = "site"
   functions = "netlify/functions"
 
 [functions]
