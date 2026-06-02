@@ -1,19 +1,24 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 
-export default function Login() {
-  const [email, setEmail] = useState('')
-  const [senha, setSenha] = useState('')
-  const [erro, setErro] = useState('')
+export default function Login({ onLogin }) {
+  const [email, setEmail]   = useState('')
+  const [senha, setSenha]   = useState('')
+  const [erro, setErro]     = useState('')
   const [loading, setLoading] = useState(false)
 
   async function entrar(e) {
     e.preventDefault()
     setErro('')
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
-    if (error) setErro('E-mail ou senha incorretos.')
-    setLoading(false)
+    try {
+      const { token, user } = await api.login(email, senha)
+      onLogin(token, user)
+    } catch (err) {
+      setErro(err.message || 'E-mail ou senha incorretos.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -35,11 +40,11 @@ export default function Login() {
 }
 
 const s = {
-  page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f2f5' },
-  card: { background: '#fff', borderRadius: 12, padding: '40px 36px', width: 340, boxShadow: '0 2px 16px rgba(0,0,0,.1)', display: 'flex', flexDirection: 'column', gap: 14 },
-  logo: { fontSize: 28, fontWeight: 800, color: '#c8000a', letterSpacing: 2, textAlign: 'center' },
+  page:   { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f2f5' },
+  card:   { background: '#fff', borderRadius: 12, padding: '40px 36px', width: 340, boxShadow: '0 2px 16px rgba(0,0,0,.1)', display: 'flex', flexDirection: 'column', gap: 14 },
+  logo:   { fontSize: 28, fontWeight: 800, color: '#c8000a', letterSpacing: 2, textAlign: 'center' },
   titulo: { textAlign: 'center', fontSize: 18, color: '#444', fontWeight: 500, marginTop: -6 },
-  input: { padding: '10px 12px', borderRadius: 7, border: '1px solid #ddd', fontSize: 15, outline: 'none' },
-  btn: { padding: '11px', borderRadius: 7, background: '#c8000a', color: '#fff', border: 'none', fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 4 },
-  erro: { color: '#c8000a', fontSize: 13, textAlign: 'center' },
+  input:  { padding: '10px 12px', borderRadius: 7, border: '1px solid #ddd', fontSize: 15, outline: 'none' },
+  btn:    { padding: '11px', borderRadius: 7, background: '#c8000a', color: '#fff', border: 'none', fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 4 },
+  erro:   { color: '#c8000a', fontSize: 13, textAlign: 'center' },
 }

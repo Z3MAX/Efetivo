@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -14,7 +14,7 @@ function fimDeSemana(ano, mes, dia) {
   return d === 0 || d === 6
 }
 
-export default function EfetivoGrade({ session }) {
+export default function EfetivoGrade({ session, onLogout }) {
   const hoje = new Date()
   const [ano, setAno]           = useState(hoje.getFullYear())
   const [mes, setMes]           = useState(hoje.getMonth())
@@ -22,71 +22,71 @@ export default function EfetivoGrade({ session }) {
   const [filtroProjeto, setFiltroProjeto] = useState('')
   const [busca, setBusca]       = useState('')
   const [funcionarios, setFuncionarios] = useState([])
-  const [presencas, setPresencas]       = useState({})   // { 'MAT-YYYY-MM-DD': { codigo_projeto, fonte } }
-  const [editando, setEditando] = useState(null)         // 'MAT-YYYY-MM-DD'
+  const [presencas, setPresencas]       = useState({})
+  const [editando, setEditando] = useState(null)
   const [salvando, setSalvando] = useState(false)
   const [fechado, setFechado]   = useState(false)
 
   const dias = diasDoMes(ano, mes)
 
-  // Carrega projetos para o dropdown
+  // Carrega projetos
   useEffect(() => {
-    supabase.from('efetivo_projetos').select('codigo,nome').eq('ativo', true).order('codigo')
-      .then(({ data }) => setProjetos(data || []))
+    api.projetos().then(setProjetos).catch(console.error)
   }, [])
 
   // Verifica se mês está fechado
   useEffect(() => {
-    supabase.from('efetivo_fechamento').select('id').eq('mes', mes + 1).eq('ano', ano).maybeSingle()
-      .then(({ data }) => setFechado(!!data?.id))
+    api.fechamento({ mes: mes + 1, ano })
+      .then(({ fechado }) => setFechado(fechado))
+      .catch(console.error)
   }, [mes, ano])
 
   // Carrega funcionários filtrados
   useEffect(() => {
-    let q = supabase.from('efetivo_funcionarios')
-      .select('matricula,nome,funcao,codigo_projeto')
-      .in('situacao', ['Ativo','Ausente','Ferias'])
-      .order('nome')
-    if (filtroProjeto) q = q.eq('codigo_projeto', filtroProjeto)
-    q.then(({ data }) => setFuncionarios(data || []))
+    const params = filtroProjeto ? { projeto: filtroProjeto } : {}
+    api.funcionarios(params).then(setFuncionarios).catch(console.error)
   }, [filtroProjeto])
 
   // Carrega presenças do mês
   const carregarPresencas = useCallback(() => {
-    const de  = `${ano}-${String(mes + 1).padStart(2,'0')}-01`
-    const ate = `${ano}-${String(mes + 1).padStart(2,'0')}-${String(dias.length).padStart(2,'0')}`
-    supabase.from('efetivo_presenca').select('matricula,data,codigo_projeto,fonte')
-      .gte('data', de).lte('data', ate)
-      .then(({ data }) => {
+    api.presencas({ mes: mes + 1, ano })
+      .then(data => {
         const mapa = {}
         ;(data || []).forEach(r => { mapa[`${r.matricula}-${r.data}`] = r })
         setPresencas(mapa)
       })
-  }, [ano, mes, dias.length])
+      .catch(console.error)
+  }, [ano, mes])
 
   useEffect(() => { carregarPresencas() }, [carregarPresencas])
 
   async function salvarPresenca(matricula, dataStr, codigoProjeto) {
     if (fechado) return
     setSalvando(true)
-    await supabase.from('efetivo_presenca').upsert({
-      matricula,
-      data: dataStr,
-      codigo_projeto: codigoProjeto || null,
-      fonte: 'manual',
-      usuario_input: session.user.email,
-    }, { onConflict: 'matricula,data', ignoreDuplicates: false })
-    await carregarPresencas()
-    setEditando(null)
-    setSalvando(false)
+    try {
+      await api.salvarPresenca({ matricula, data: dataStr, codigo_projeto: codigoProjeto || null })
+      await carregarPresencas()
+    } catch (e) {
+      alert(e.message)
+    } finally {
+      setEditando(null)
+      setSalvando(false)
+    }
   }
 
   async function fecharMes() {
     if (!window.confirm(`Fechar ${MESES[mes]}/${ano}? Isso bloqueará novas edições.`)) return
-    await supabase.from('efetivo_fechamento').insert({
-      mes: mes + 1, ano, fechado_por: session.user.email
-    })
-    setFechado(true)
+    try {
+      await api.fecharMes({ mes: mes + 1, ano })
+      setFechado(true)
+    } catch (e) {
+      alert(e.message)
+    }
+  }
+
+  // Normaliza a chave de presença: remove horário, mantém só YYYY-MM-DD
+  function chavePresenca(matricula, dataStr) {
+    return `${matricula}-${dataStr.substring(0, 10)}`
   }
 
   const funcsFiltradas = funcionarios.filter(f =>
@@ -101,7 +101,7 @@ export default function EfetivoGrade({ session }) {
         <span style={s.logo}>RTT · Efetivo</span>
         <div style={s.headerRight}>
           <span style={s.userEmail}>{session.user.email}</span>
-          <button style={s.btnSair} onClick={() => supabase.auth.signOut()}>Sair</button>
+          <button style={s.btnSair} onClick={onLogout}>Sair</button>
         </div>
       </div>
 
@@ -154,7 +154,7 @@ export default function EfetivoGrade({ session }) {
                 <td style={s.tdFunc}>{func.funcao}</td>
                 {dias.map(d => {
                   const dataStr = `${ano}-${String(mes + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
-                  const chave   = `${func.matricula}-${dataStr}`
+                  const chave   = chavePresenca(func.matricula, dataStr)
                   const reg     = presencas[chave]
                   const isEdit  = editando === chave
                   const isWeekend = fimDeSemana(ano, mes, d)
@@ -216,31 +216,31 @@ function CelulaEdit({ projetos, valorAtual, onSalvar, onCancelar, salvando }) {
 }
 
 const s = {
-  root: { minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#f0f2f5' },
-  header: { background: '#c8000a', color: '#fff', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
-  logo: { fontWeight: 800, fontSize: 17, letterSpacing: 1 },
-  headerRight: { display: 'flex', alignItems: 'center', gap: 14 },
-  userEmail: { fontSize: 13, opacity: .85 },
-  btnSair: { background: 'rgba(255,255,255,.2)', border: 'none', color: '#fff', padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 },
-  filtros: { display: 'flex', gap: 10, padding: '14px 24px', background: '#fff', borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap', alignItems: 'center' },
-  select: { padding: '7px 10px', borderRadius: 7, border: '1px solid #ddd', fontSize: 13, background: '#fff' },
-  busca: { padding: '7px 10px', borderRadius: 7, border: '1px solid #ddd', fontSize: 13, minWidth: 200 },
-  btnFechar: { background: '#c8000a', color: '#fff', border: 'none', padding: '7px 16px', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 },
+  root:         { minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#f0f2f5' },
+  header:       { background: '#c8000a', color: '#fff', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
+  logo:         { fontWeight: 800, fontSize: 17, letterSpacing: 1 },
+  headerRight:  { display: 'flex', alignItems: 'center', gap: 14 },
+  userEmail:    { fontSize: 13, opacity: .85 },
+  btnSair:      { background: 'rgba(255,255,255,.2)', border: 'none', color: '#fff', padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 },
+  filtros:      { display: 'flex', gap: 10, padding: '14px 24px', background: '#fff', borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap', alignItems: 'center' },
+  select:       { padding: '7px 10px', borderRadius: 7, border: '1px solid #ddd', fontSize: 13, background: '#fff' },
+  busca:        { padding: '7px 10px', borderRadius: 7, border: '1px solid #ddd', fontSize: 13, minWidth: 200 },
+  btnFechar:    { background: '#c8000a', color: '#fff', border: 'none', padding: '7px 16px', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 },
   badgeFechado: { background: '#f1f1f1', color: '#666', padding: '6px 14px', borderRadius: 7, fontSize: 13 },
-  gradeWrap: { flex: 1, overflow: 'auto', padding: '16px 24px' },
-  table: { borderCollapse: 'collapse', fontSize: 12, background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.07)', minWidth: '100%' },
-  thNome: { padding: '10px 12px', background: '#f8f9fa', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap', borderBottom: '2px solid #e5e7eb', minWidth: 220, position: 'sticky', left: 0, zIndex: 2 },
-  thFunc: { padding: '10px 12px', background: '#f8f9fa', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap', borderBottom: '2px solid #e5e7eb', minWidth: 130 },
-  thDia: { padding: '10px 6px', textAlign: 'center', fontWeight: 600, borderBottom: '2px solid #e5e7eb', minWidth: 48, borderLeft: '1px solid #f0f0f0' },
-  tr: { borderBottom: '1px solid #f0f0f0' },
-  tdNome: { padding: '8px 12px', whiteSpace: 'nowrap', background: '#fff', position: 'sticky', left: 0, zIndex: 1, borderRight: '1px solid #e5e7eb' },
-  tdFunc: { padding: '8px 12px', color: '#666', whiteSpace: 'nowrap' },
-  tdDia: { padding: '4px', textAlign: 'center', cursor: 'pointer', borderLeft: '1px solid #f0f0f0', verticalAlign: 'middle' },
-  mat: { display: 'block', fontSize: 10, color: '#999' },
-  nome: { display: 'block', fontWeight: 500 },
-  badge: { display: 'inline-block', padding: '2px 7px', borderRadius: 5, fontWeight: 600, fontSize: 11 },
-  vazio: { color: '#ccc', fontSize: 16 },
-  legenda: { padding: '10px 24px', background: '#fff', borderTop: '1px solid #e5e7eb', fontSize: 12, color: '#555', display: 'flex', alignItems: 'center', gap: 6 },
-  btnOk: { background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 },
-  btnCancel: { background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 },
+  gradeWrap:    { flex: 1, overflow: 'auto', padding: '16px 24px' },
+  table:        { borderCollapse: 'collapse', fontSize: 12, background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.07)', minWidth: '100%' },
+  thNome:       { padding: '10px 12px', background: '#f8f9fa', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap', borderBottom: '2px solid #e5e7eb', minWidth: 220, position: 'sticky', left: 0, zIndex: 2 },
+  thFunc:       { padding: '10px 12px', background: '#f8f9fa', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap', borderBottom: '2px solid #e5e7eb', minWidth: 130 },
+  thDia:        { padding: '10px 6px', textAlign: 'center', fontWeight: 600, borderBottom: '2px solid #e5e7eb', minWidth: 48, borderLeft: '1px solid #f0f0f0' },
+  tr:           { borderBottom: '1px solid #f0f0f0' },
+  tdNome:       { padding: '8px 12px', whiteSpace: 'nowrap', background: '#fff', position: 'sticky', left: 0, zIndex: 1, borderRight: '1px solid #e5e7eb' },
+  tdFunc:       { padding: '8px 12px', color: '#666', whiteSpace: 'nowrap' },
+  tdDia:        { padding: '4px', textAlign: 'center', cursor: 'pointer', borderLeft: '1px solid #f0f0f0', verticalAlign: 'middle' },
+  mat:          { display: 'block', fontSize: 10, color: '#999' },
+  nome:         { display: 'block', fontWeight: 500 },
+  badge:        { display: 'inline-block', padding: '2px 7px', borderRadius: 5, fontWeight: 600, fontSize: 11 },
+  vazio:        { color: '#ccc', fontSize: 16 },
+  legenda:      { padding: '10px 24px', background: '#fff', borderTop: '1px solid #e5e7eb', fontSize: 12, color: '#555', display: 'flex', alignItems: 'center', gap: 6 },
+  btnOk:        { background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 },
+  btnCancel:    { background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 },
 }
