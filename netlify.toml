@@ -1,8 +1,17 @@
 [[redirects]]
+  from = "/api/sync-drive"
+  to = "/.netlify/functions/sync-drive"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200
   force = true
+
+[functions."sync-drive"]
+  included_files = []
 
 [[redirects]]
   from = "/*"

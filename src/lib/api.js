@@ -87,4 +87,7 @@ export const api = {
     req('/fechamento', { method: 'POST', body: JSON.stringify({ mes, ano }) }),
 
   syncStatus: () => req('/sync-status'),
+
+  syncDrive: (mes, ano) =>
+    req('/sync-drive', { method: 'POST', body: JSON.stringify({ mes, ano }) }),
 }

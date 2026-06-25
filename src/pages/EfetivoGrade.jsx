@@ -26,6 +26,8 @@ export default function EfetivoGrade({ user, onLogout }) {
   const [editando, setEditando] = useState(null)
   const [salvando, setSalvando] = useState(false)
   const [fechado, setFechado]   = useState(false)
+  const [sincronizando, setSincronizando] = useState(false)
+  const [resultadoSync, setResultadoSync] = useState(null)
 
   const dias = diasDoMes(ano, mes)
 
@@ -74,6 +76,20 @@ export default function EfetivoGrade({ user, onLogout }) {
     setSalvando(false)
   }
 
+  async function sincronizarDrive() {
+    if (!window.confirm(`Sincronizar dados de ${MESES[mes]}/${ano} com o Google Drive?`)) return
+    setSincronizando(true)
+    setResultadoSync(null)
+    try {
+      const r = await api.syncDrive(mes + 1, ano)
+      setResultadoSync({ ok: true, ...r })
+      await carregarPresencas()
+    } catch (e) {
+      setResultadoSync({ ok: false, erro: e.message })
+    }
+    setSincronizando(false)
+  }
+
   async function fecharMes() {
     if (!window.confirm(`Fechar ${MESES[mes]}/${ano}? Isso bloqueará novas edições.`)) return
     try {
@@ -115,10 +131,32 @@ export default function EfetivoGrade({ user, onLogout }) {
         <input style={s.busca} placeholder="Buscar funcionário..." value={busca}
           onChange={e => setBusca(e.target.value)} />
         <div style={{ flex: 1 }} />
+        {user.perfil === 'admin' && (
+          <button style={sincronizando ? s.btnSyncBusy : s.btnSync}
+                  onClick={sincronizarDrive} disabled={sincronizando}>
+            {sincronizando ? '⏳ Sincronizando...' : '☁ Sincronizar Drive'}
+          </button>
+        )}
         {fechado
           ? <span style={s.badgeFechado}>Mês fechado</span>
           : <button style={s.btnFechar} onClick={fecharMes}>Fechar {MESES[mes]}</button>}
       </div>
+
+      {resultadoSync && (
+        <div style={resultadoSync.ok ? s.alertOk : s.alertErr}>
+          {resultadoSync.ok ? (
+            <>
+              <strong>✓ Sincronizado</strong> · Arquivo: <em>{resultadoSync.arquivo}</em>
+              &nbsp;·&nbsp;{resultadoSync.funcionarios} funcionários
+              &nbsp;·&nbsp;{resultadoSync.presencas} presenças
+              &nbsp;·&nbsp;{resultadoSync.abonos} abonos
+            </>
+          ) : (
+            <><strong>✗ Erro:</strong> {resultadoSync.erro}</>
+          )}
+          <button onClick={() => setResultadoSync(null)} style={s.btnFecharAlert}>✕</button>
+        </div>
+      )}
 
       {/* Grade */}
       <div style={s.gradeWrap}>
@@ -238,4 +276,9 @@ const s = {
   legenda: { padding: '10px 24px', background: '#fff', borderTop: '1px solid #e5e7eb', fontSize: 12, color: '#555', display: 'flex', alignItems: 'center', gap: 6 },
   btnOk: { background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 },
   btnCancel: { background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 },
+  btnSync: { background: '#1a56db', color: '#fff', border: 'none', padding: '7px 16px', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 },
+  btnSyncBusy: { background: '#93aee0', color: '#fff', border: 'none', padding: '7px 16px', borderRadius: 7, cursor: 'not-allowed', fontSize: 13, fontWeight: 600 },
+  alertOk: { margin: '0 24px 12px', padding: '10px 16px', background: '#ecfdf5', border: '1px solid #6ee7b7', borderRadius: 8, fontSize: 13, color: '#065f46', display: 'flex', alignItems: 'center', gap: 8 },
+  alertErr: { margin: '0 24px 12px', padding: '10px 16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 8 },
+  btnFecharAlert: { marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: 'inherit', opacity: .6 },
 }
