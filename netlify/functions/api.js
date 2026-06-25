@@ -108,42 +108,58 @@ exports.handler = async (event) => {
     const de   = `${anoN}-${String(mesN).padStart(2,'0')}-01`
     const diasMes = new Date(anoN, mesN, 0).getDate()
     const ate  = `${anoN}-${String(mesN).padStart(2,'0')}-${String(diasMes).padStart(2,'0')}`
+    const buscaLike = `%${busca}%`
 
-    let sql, params
-    if (projeto) {
-      sql = `
+    let rows
+    if (projeto && busca) {
+      rows = await db`
         SELECT DISTINCT f.matricula, f.nome, f.funcao, f.codigo_projeto,
                         f.situacao, f.dt_admissao, f.dt_demissao, f.tipo_contrato
         FROM efetivo_funcionarios f
-        WHERE (
-          f.situacao IN ('Ativo','Ausente','Ferias')
-          OR (f.situacao = 'Demitido' AND f.dt_demissao BETWEEN $1 AND $2)
-        )
-        AND (
-          f.codigo_projeto = $3
+        WHERE (f.situacao IN ('Ativo','Ausente','Ferias')
+          OR (f.situacao = 'Demitido' AND f.dt_demissao BETWEEN ${de} AND ${ate}))
+        AND (f.codigo_projeto = ${projeto}
           OR f.matricula IN (
             SELECT DISTINCT matricula FROM efetivo_presenca
-            WHERE codigo_projeto = $3 AND data BETWEEN $1 AND $2
-          )
-        )
-        ${busca ? "AND (f.nome ILIKE $4 OR f.matricula ILIKE $4)" : ''}
+            WHERE codigo_projeto = ${projeto} AND data BETWEEN ${de} AND ${ate}
+          ))
+        AND (f.nome ILIKE ${buscaLike} OR f.matricula ILIKE ${buscaLike})
         ORDER BY f.nome
       `
-      params = busca ? [de, ate, projeto, `%${busca}%`] : [de, ate, projeto]
+    } else if (projeto) {
+      rows = await db`
+        SELECT DISTINCT f.matricula, f.nome, f.funcao, f.codigo_projeto,
+                        f.situacao, f.dt_admissao, f.dt_demissao, f.tipo_contrato
+        FROM efetivo_funcionarios f
+        WHERE (f.situacao IN ('Ativo','Ausente','Ferias')
+          OR (f.situacao = 'Demitido' AND f.dt_demissao BETWEEN ${de} AND ${ate}))
+        AND (f.codigo_projeto = ${projeto}
+          OR f.matricula IN (
+            SELECT DISTINCT matricula FROM efetivo_presenca
+            WHERE codigo_projeto = ${projeto} AND data BETWEEN ${de} AND ${ate}
+          ))
+        ORDER BY f.nome
+      `
+    } else if (busca) {
+      rows = await db`
+        SELECT matricula, nome, funcao, codigo_projeto, situacao,
+               dt_admissao, dt_demissao, tipo_contrato
+        FROM efetivo_funcionarios
+        WHERE (situacao IN ('Ativo','Ausente','Ferias')
+          OR (situacao = 'Demitido' AND dt_demissao BETWEEN ${de} AND ${ate}))
+        AND (nome ILIKE ${buscaLike} OR matricula ILIKE ${buscaLike})
+        ORDER BY nome
+      `
     } else {
-      sql = `
+      rows = await db`
         SELECT matricula, nome, funcao, codigo_projeto, situacao,
                dt_admissao, dt_demissao, tipo_contrato
         FROM efetivo_funcionarios
         WHERE situacao IN ('Ativo','Ausente','Ferias')
-          OR (situacao = 'Demitido' AND dt_demissao BETWEEN $1 AND $2)
-        ${busca ? "AND (nome ILIKE $3 OR matricula ILIKE $3)" : ''}
+           OR (situacao = 'Demitido' AND dt_demissao BETWEEN ${de} AND ${ate})
         ORDER BY nome
       `
-      params = busca ? [de, ate, `%${busca}%`] : [de, ate]
     }
-
-    const rows = await db.unsafe(sql, params)
     return ok(rows)
   }
 
@@ -285,21 +301,45 @@ exports.handler = async (event) => {
   // ── GET /ausencias/manual ───────────────────────────────────────────
   if (path === '/ausencias/manual' && method === 'GET') {
     const { projeto = '', busca = '' } = qs
-    let sql = `
-      SELECT m.id, m.matricula, f.nome, f.funcao, f.codigo_projeto,
-             m.dt_inicio, m.dt_fim, m.motivo, m.usuario_input, m.created_at
-      FROM efetivo_ausencias_manual m
-      LEFT JOIN efetivo_funcionarios f ON m.matricula = f.matricula
-    `
-    const conds = []; const params = []
-    if (projeto) { conds.push(`f.codigo_projeto = $${params.length+1}`); params.push(projeto) }
-    if (busca) {
-      conds.push(`(f.nome ILIKE $${params.length+1} OR m.matricula ILIKE $${params.length+1})`)
-      params.push(`%${busca}%`)
+    const buscaLike = `%${busca}%`
+    let rows
+    if (projeto && busca) {
+      rows = await db`
+        SELECT m.id, m.matricula, f.nome, f.funcao, f.codigo_projeto,
+               m.dt_inicio, m.dt_fim, m.motivo, m.usuario_input, m.created_at
+        FROM efetivo_ausencias_manual m
+        LEFT JOIN efetivo_funcionarios f ON m.matricula = f.matricula
+        WHERE f.codigo_projeto = ${projeto}
+          AND (f.nome ILIKE ${buscaLike} OR m.matricula ILIKE ${buscaLike})
+        ORDER BY m.matricula, m.dt_inicio
+      `
+    } else if (projeto) {
+      rows = await db`
+        SELECT m.id, m.matricula, f.nome, f.funcao, f.codigo_projeto,
+               m.dt_inicio, m.dt_fim, m.motivo, m.usuario_input, m.created_at
+        FROM efetivo_ausencias_manual m
+        LEFT JOIN efetivo_funcionarios f ON m.matricula = f.matricula
+        WHERE f.codigo_projeto = ${projeto}
+        ORDER BY m.matricula, m.dt_inicio
+      `
+    } else if (busca) {
+      rows = await db`
+        SELECT m.id, m.matricula, f.nome, f.funcao, f.codigo_projeto,
+               m.dt_inicio, m.dt_fim, m.motivo, m.usuario_input, m.created_at
+        FROM efetivo_ausencias_manual m
+        LEFT JOIN efetivo_funcionarios f ON m.matricula = f.matricula
+        WHERE f.nome ILIKE ${buscaLike} OR m.matricula ILIKE ${buscaLike}
+        ORDER BY m.matricula, m.dt_inicio
+      `
+    } else {
+      rows = await db`
+        SELECT m.id, m.matricula, f.nome, f.funcao, f.codigo_projeto,
+               m.dt_inicio, m.dt_fim, m.motivo, m.usuario_input, m.created_at
+        FROM efetivo_ausencias_manual m
+        LEFT JOIN efetivo_funcionarios f ON m.matricula = f.matricula
+        ORDER BY m.matricula, m.dt_inicio
+      `
     }
-    if (conds.length) sql += ` WHERE ${conds.join(' AND ')}`
-    sql += ' ORDER BY m.matricula, m.dt_inicio'
-    const rows = await db.unsafe(sql, params)
     return ok(rows)
   }
 
