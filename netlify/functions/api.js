@@ -327,6 +327,18 @@ exports.handler = async (event) => {
     return ok({ inseridos, erros })
   }
 
+  // ── DELETE /presencas/:matricula/:data ──────────────────────────────
+  const matchDelPres = path.match(/^\/presencas\/([^/]+)\/(\d{4}-\d{2}-\d{2})$/)
+  if (matchDelPres && method === 'DELETE') {
+    const mat  = matchDelPres[1]
+    const data = matchDelPres[2]
+    const mesN = parseInt(data.split('-')[1])
+    const anoN = parseInt(data.split('-')[0])
+    if (await mesFechado(db, mesN, anoN)) return err('Mês fechado. Edição bloqueada.', 403)
+    await db`DELETE FROM efetivo_presenca WHERE matricula = ${mat} AND data = ${data}`
+    return ok({ ok: true })
+  }
+
   // ── DELETE /ausencias/manual/:id ────────────────────────────────────
   const matchDelete = path.match(/^\/ausencias\/manual\/(\d+)$/)
   if (matchDelete && method === 'DELETE') {

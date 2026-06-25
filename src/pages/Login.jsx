@@ -12,8 +12,8 @@ export default function Login({ onLogin }) {
     setErro('')
     setLoading(true)
     try {
-      const { user } = await api.login(email, senha)
-      onLogin(user)
+      await api.login(email, senha)
+      onLogin()
     } catch {
       setErro('E-mail ou senha incorretos.')
     }
