@@ -137,6 +137,7 @@ export default function EfetivoGrade({ user, onLogout }) {
             {sincronizando ? '⏳ Sincronizando...' : '☁ Sincronizar Drive'}
           </button>
         )}
+        <button style={s.btnTeste} onClick={() => alert('Botão Teste clicado!')}>Teste</button>
         {fechado
           ? <span style={s.badgeFechado}>Mês fechado</span>
           : <button style={s.btnFechar} onClick={fecharMes}>Fechar {MESES[mes]}</button>}
@@ -276,6 +277,7 @@ const s = {
   legenda: { padding: '10px 24px', background: '#fff', borderTop: '1px solid #e5e7eb', fontSize: 12, color: '#555', display: 'flex', alignItems: 'center', gap: 6 },
   btnOk: { background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 },
   btnCancel: { background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 },
+  btnTeste: { background: '#7c3aed', color: '#fff', border: 'none', padding: '7px 16px', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 },
   btnSync: { background: '#1a56db', color: '#fff', border: 'none', padding: '7px 16px', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 },
   btnSyncBusy: { background: '#93aee0', color: '#fff', border: 'none', padding: '7px 16px', borderRadius: 7, cursor: 'not-allowed', fontSize: 13, fontWeight: 600 },
   alertOk: { margin: '0 24px 12px', padding: '10px 16px', background: '#ecfdf5', border: '1px solid #6ee7b7', borderRadius: 8, fontSize: 13, color: '#065f46', display: 'flex', alignItems: 'center', gap: 8 },
