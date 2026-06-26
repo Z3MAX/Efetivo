@@ -727,6 +727,7 @@ const FTE_DATA = {
 };
 
 let chartInstances = {};
+let dashboardData = [];
 
 function destroyChart(id) {
   if(chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
@@ -734,38 +735,79 @@ function destroyChart(id) {
 
 async function renderDashboard() {
   document.getElementById('content-area').innerHTML =
-    `<div style="padding:40px;text-align:center;color:#9ca3af;font-size:13px">Carregando dados…</div>`;
+    `<div style="padding:40px;text-align:center;color:#9ca3af;font-size:13px">Calculando FTE…</div>`;
 
-  // Busca dados reais
+  const uteis = diasUteis(selectedMes, selectedAno);
   let projs = [];
   let usandoDadosReais = false;
-  try {
-    const fteData = await apiFetch(`/api/fte-resumo?mes=${selectedMes}&ano=${selectedAno}`);
-    if (fteData && fteData.length) {
-      projs = fteData
-        .filter(p => p.codigo_projeto && p.hc > 0)
-        .map(p => {
-          const proj = projetos.find(x => x.codigo === p.codigo_projeto);
-          return { cod: p.codigo_projeto, nome: proj?.nome || p.codigo_projeto, hc: p.hc, fte: p.fte };
-        })
-        .filter(p => selectedProj === 'all' || p.cod === selectedProj)
-        .sort((a, b) => b.hc - a.hc);
-      usandoDadosReais = true;
-    }
-  } catch(e) {}
+  let dailyLabels = [], dailyVals = [];
 
-  // Fallback para dados mockados se API falhar
+  const projsParaCarregar = selectedProj === 'all'
+    ? projetos
+    : projetos.filter(p => p.codigo === selectedProj);
+
+  if (projsParaCarregar.length > 0) {
+    // Carrega abonos e ausências uma vez (compartilhados entre projetos)
+    const [abonos, ausencias] = await Promise.all([
+      apiFetch(`/api/abonos?mes=${selectedMes}&ano=${selectedAno}`),
+      apiFetch(`/api/ausencias?mes=${selectedMes}&ano=${selectedAno}`),
+    ]);
+    const abonosArr = abonos || [];
+    const ausenciasArr = ausencias || [];
+
+    // Carrega funcionários + presenças por projeto em paralelo
+    const projData = await Promise.all(projsParaCarregar.map(async p => {
+      const [funcs, pres] = await Promise.all([
+        apiFetch(`/api/funcionarios?mes=${selectedMes}&ano=${selectedAno}&projeto=${p.codigo}`),
+        apiFetch(`/api/presencas?mes=${selectedMes}&ano=${selectedAno}&projeto=${p.codigo}`),
+      ]);
+      return { proj: p, funcs: funcs || [], pres: pres || [], abonos: abonosArr, ausencias: ausenciasArr };
+    }));
+
+    // Calcula FTE por projeto usando calcFteFunc — mesma lógica do piloto
+    projs = projData
+      .map(({ proj, funcs, pres, abonos, ausencias }) => {
+        let fte = 0;
+        for (const f of funcs) {
+          fte += calcFteFunc(f.matricula, selectedMes, selectedAno, f.funcao, pres, abonos, ausencias, f.dt_admissao, f.dt_demissao, f.situacao) / uteis;
+        }
+        return { cod: proj.codigo, nome: proj.nome, hc: funcs.length, fte: +fte.toFixed(1), _pd: { funcs, pres, abonos, ausencias } };
+      })
+      .filter(p => p.hc > 0)
+      .sort((a, b) => b.hc - a.hc);
+
+    if (projs.length > 0) {
+      usandoDadosReais = true;
+
+      // Evolução diária: conta badges fte=true por dia útil
+      const totalDias = diasDoMes(selectedMes, selectedAno);
+      for (let d = 1; d <= totalDias; d++) {
+        if (isWeekend(d, selectedMes, selectedAno)) continue;
+        let count = 0;
+        for (const p of projs) {
+          for (const f of p._pd.funcs) {
+            const b = calcBadge(f.matricula, d, selectedMes, selectedAno, f.funcao, p._pd.pres, p._pd.abonos, p._pd.ausencias, f.dt_admissao, f.dt_demissao, f.situacao);
+            if (b.fte) count++;
+          }
+        }
+        dailyLabels.push(`${d}/${selectedMes}`);
+        dailyVals.push(count);
+      }
+    }
+  }
+
+  // Fallback para dados mockados se não houver projetos via API
   if (!projs.length) {
     const key = `${selectedMes}-${selectedAno}`;
     const data = FTE_DATA[key] || FTE_DATA['4-2026'];
-    projs = data.projetos;
-    if(selectedProj !== 'all') projs = projs.filter(p => p.cod === selectedProj);
+    projs = selectedProj === 'all' ? data.projetos : data.projetos.filter(p => p.cod === selectedProj);
   }
 
-  const totalHC = projs.reduce((s,p) => s+p.hc, 0);
-  const totalFTE = projs.reduce((s,p) => s+p.fte, 0);
-  const util = totalHC > 0 ? (totalFTE/totalHC*100).toFixed(1) : 0;
-  const uteis = diasUteis(selectedMes, selectedAno);
+  dashboardData = projs;
+
+  const totalHC  = projs.reduce((s, p) => s + p.hc, 0);
+  const totalFTE = projs.reduce((s, p) => s + p.fte, 0);
+  const util = totalHC > 0 ? (totalFTE / totalHC * 100).toFixed(1) : 0;
 
   const ultimaSync = syncStatus?.ultima_sync
     ? new Date(syncStatus.ultima_sync).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
@@ -866,22 +908,23 @@ async function renderDashboard() {
   setTimeout(() => {
     destroyChart('linha'); destroyChart('barra');
 
-    // Linha: presença acumulada simulada por dia
-    const total = diasDoMes(selectedMes, selectedAno);
-    const labels = []; const vals = [];
-    for(let d = 1; d <= total; d++) {
-      if(!isWeekend(d, selectedMes, selectedAno)) {
-        labels.push(`${d}/${selectedMes}`);
-        const base = totalFTE / diasUteis(selectedMes, selectedAno);
-        vals.push(+(base * (0.88 + Math.random()*0.18)).toFixed(1));
+    // Linha: presença real por dia útil (calculada pelo calcBadge) ou estimada se fallback
+    if (!dailyLabels.length) {
+      const total = diasDoMes(selectedMes, selectedAno);
+      const base = totalFTE / diasUteis(selectedMes, selectedAno);
+      for (let d = 1; d <= total; d++) {
+        if (!isWeekend(d, selectedMes, selectedAno)) {
+          dailyLabels.push(`${d}/${selectedMes}`);
+          dailyVals.push(+(base * (0.92 + 0.08 * (d / total))).toFixed(1));
+        }
       }
     }
 
     const ctxL = document.getElementById('chart-linha');
     if(ctxL) chartInstances['linha'] = new Chart(ctxL, {
       type: 'line',
-      data: { labels, datasets: [{
-        label: 'Presentes / dia', data: vals,
+      data: { labels: dailyLabels, datasets: [{
+        label: 'Presentes / dia', data: dailyVals,
         borderColor: '#185FA5', backgroundColor: 'rgba(24,95,165,0.08)',
         borderWidth: 2, pointRadius: 2, fill: true, tension: 0.3
       }]},
@@ -1231,15 +1274,14 @@ function renderExportView() {
 }
 
 function exportarFTEExcel() {
-  const key = `${selectedMes}-${selectedAno}`;
-  const data = FTE_DATA[key] || FTE_DATA['4-2026'];
   const uteis = diasUteis(selectedMes, selectedAno);
+  const fonte = dashboardData.length ? dashboardData : (FTE_DATA[`${selectedMes}-${selectedAno}`] || FTE_DATA['4-2026']).projetos;
 
   const rows = [['Código','Projeto','HC','FTE','Utilização %','Dias Úteis','Mês','Ano']];
-  for(const p of data.projetos) {
+  for(const p of fonte) {
     rows.push([p.cod, p.nome, p.hc, +p.fte.toFixed(1), +((p.fte/p.hc)*100).toFixed(1), uteis, selectedMes, selectedAno]);
   }
-  const total = data.projetos.reduce((s,p)=>({hc:s.hc+p.hc,fte:s.fte+p.fte}), {hc:0,fte:0});
+  const total = fonte.reduce((s,p)=>({hc:s.hc+p.hc,fte:s.fte+p.fte}), {hc:0,fte:0});
   rows.push(['','TOTAL',total.hc,+total.fte.toFixed(1),'',uteis,selectedMes,selectedAno]);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
