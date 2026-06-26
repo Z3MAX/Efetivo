@@ -405,27 +405,8 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <span class="topbar-title" id="topbar-title">Dashboard</span>
     </div>
     <div class="topbar-right">
-      <select class="topbar-select" id="sel-mes-top" onchange="onMesChange()">
-        <option value="5-2026">Maio / 2026</option>
-        <option value="4-2026" selected>Abril / 2026</option>
-        <option value="3-2026">Março / 2026</option>
-        <option value="2-2026">Fevereiro / 2026</option>
-        <option value="1-2026">Janeiro / 2026</option>
-      </select>
-      <select class="topbar-select" id="sel-proj-top" onchange="onProjChange()">
-        <option value="all">Todos os projetos</option>
-        <option value="183">183 — REVAP</option>
-        <option value="208">208 — REFAP</option>
-        <option value="43">43 — S11D</option>
-        <option value="159">159 — Porto Norte</option>
-        <option value="194">194 — Transpetro Suape</option>
-        <option value="141">141 — Ultracargo Suape</option>
-        <option value="225">225 — Hydro Alunorte</option>
-        <option value="214">214 — Brava RN</option>
-        <option value="74">74 — CSN UPV Mecânica</option>
-        <option value="135">135 — CSN UPV Vulcanização</option>
-        <option value="131">131 — CSN UPV Despoeiramento</option>
-      </select>
+      <select class="topbar-select" id="sel-mes-top" onchange="onMesChange()"></select>
+      <select class="topbar-select" id="sel-proj-top" onchange="onProjChange()"></select>
       <button id="btn-sync" class="btn btn-outline" onclick="syncTotvs()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         Sincronizar
@@ -538,6 +519,8 @@ let gradeData = { funcionarios: [], presencas: [], abonos: [], ausencias: [] };
 let filterSearch = '';
 let filterSituacao = '';
 let editTarget = null;
+let projetos = [];
+let syncStatus = null;
 
 const PROJETOS = {
   '183': 'Petrobras REVAP', '208': 'Petrobras REFAP',
@@ -749,21 +732,52 @@ function destroyChart(id) {
   if(chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
 }
 
-function renderDashboard() {
-  const key = `${selectedMes}-${selectedAno}`;
-  const data = FTE_DATA[key] || FTE_DATA['4-2026'];
-  let projs = data.projetos;
-  if(selectedProj !== 'all') projs = projs.filter(p => p.cod === selectedProj);
+async function renderDashboard() {
+  document.getElementById('content-area').innerHTML =
+    `<div style="padding:40px;text-align:center;color:#9ca3af;font-size:13px">Carregando dados…</div>`;
+
+  // Busca dados reais
+  let projs = [];
+  let usandoDadosReais = false;
+  try {
+    const fteData = await apiFetch(`/api/fte-resumo?mes=${selectedMes}&ano=${selectedAno}`);
+    if (fteData && fteData.length) {
+      const uteisMes = diasUteis(selectedMes, selectedAno);
+      projs = fteData
+        .filter(p => p.codigo_projeto && p.hc > 0)
+        .map(p => {
+          const proj = projetos.find(x => x.codigo === p.codigo_projeto);
+          const fte = Math.min(+(p.presencas / uteisMes).toFixed(1), p.hc);
+          return { cod: p.codigo_projeto, nome: proj?.nome || p.codigo_projeto, hc: p.hc, fte };
+        })
+        .filter(p => selectedProj === 'all' || p.cod === selectedProj)
+        .sort((a, b) => b.hc - a.hc);
+      usandoDadosReais = true;
+    }
+  } catch(e) {}
+
+  // Fallback para dados mockados se API falhar
+  if (!projs.length) {
+    const key = `${selectedMes}-${selectedAno}`;
+    const data = FTE_DATA[key] || FTE_DATA['4-2026'];
+    projs = data.projetos;
+    if(selectedProj !== 'all') projs = projs.filter(p => p.cod === selectedProj);
+  }
 
   const totalHC = projs.reduce((s,p) => s+p.hc, 0);
   const totalFTE = projs.reduce((s,p) => s+p.fte, 0);
   const util = totalHC > 0 ? (totalFTE/totalHC*100).toFixed(1) : 0;
   const uteis = diasUteis(selectedMes, selectedAno);
 
+  const ultimaSync = syncStatus?.ultima_sync
+    ? new Date(syncStatus.ultima_sync).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
+    : 'Não disponível';
+
   const html = `
   <div class="sync-bar">
     <div class="sync-dot"></div>
-    Última sincronização TOTVS: hoje às 08:14 &nbsp;|&nbsp; ${nomeMes(selectedMes)} / ${selectedAno} &nbsp;|&nbsp; ${uteis} dias úteis
+    Última sincronização: ${ultimaSync} &nbsp;|&nbsp; ${nomeMes(selectedMes)} / ${selectedAno} &nbsp;|&nbsp; ${uteis} dias úteis
+    ${!usandoDadosReais ? '&nbsp;|&nbsp; <span style="color:#f59e0b;font-weight:600">⚠ Dados estimados</span>' : ''}
   </div>
   <div style="padding:20px">
     <div class="metrics-grid">
@@ -950,17 +964,31 @@ function getExamplePresencas(funcs, mes, ano) {
 }
 
 async function loadGradeData() {
-  // Tenta API, fallback para dados exemplo
-  let funcs = await apiFetch(`/api/funcionarios?mes=${selectedMes}&ano=${selectedAno}${selectedProj!=='all'?'&projeto='+selectedProj:''}`);
-  let pres = await apiFetch(`/api/presencas?mes=${selectedMes}&ano=${selectedAno}${selectedProj!=='all'?'&projeto='+selectedProj:''}`);
-  let abonos = await apiFetch(`/api/abonos?mes=${selectedMes}&ano=${selectedAno}`);
-  let ausencias = await apiFetch(`/api/ausencias?${selectedProj!=='all'?'projeto='+selectedProj:''}`);
+  const wrap = document.getElementById('grade-wrap');
 
-  // Fallback com dados de exemplo se API indisponível
-  if(!funcs) funcs = getExampleFuncionarios(selectedProj);
-  if(!pres) pres = getExamplePresencas(funcs, selectedMes, selectedAno);
-  if(!abonos) abonos = [];
-  if(!ausencias) ausencias = [];
+  // Exige seleção de projeto para evitar timeout
+  if (selectedProj === 'all') {
+    if (wrap) wrap.innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+        <p style="font-size:14px;font-weight:500;margin-bottom:6px">Selecione um projeto para ver a grade</p>
+        <p>O filtro "Todos os projetos" não está disponível na grade — selecione um projeto específico no seletor acima.</p>
+      </div>`;
+    return;
+  }
+
+  // Busca dados reais da API
+  let [funcs, pres, abonos, ausencias] = await Promise.all([
+    apiFetch(`/api/funcionarios?mes=${selectedMes}&ano=${selectedAno}&projeto=${selectedProj}`),
+    apiFetch(`/api/presencas?mes=${selectedMes}&ano=${selectedAno}&projeto=${selectedProj}`),
+    apiFetch(`/api/abonos?mes=${selectedMes}&ano=${selectedAno}`),
+    apiFetch(`/api/ausencias?mes=${selectedMes}&ano=${selectedAno}`),
+  ]);
+
+  if (!funcs) funcs = [];
+  if (!pres)  pres  = [];
+  if (!abonos)    abonos    = [];
+  if (!ausencias) ausencias = [];
 
   gradeData = { funcionarios: funcs, presencas: pres, abonos, ausencias };
   renderGrade();
@@ -1225,9 +1253,9 @@ function exportarFTEExcel() {
 }
 
 function exportarGradeExcel() {
-  const proj = document.getElementById('exp-proj')?.value || '183';
-  const funcs = getExampleFuncionarios(proj);
-  const pres = getExamplePresencas(funcs, selectedMes, selectedAno);
+  const proj = selectedProj !== 'all' ? selectedProj : (document.getElementById('exp-proj')?.value || '183');
+  const funcs = gradeData.funcionarios.length ? gradeData.funcionarios : getExampleFuncionarios(proj);
+  const pres  = gradeData.presencas;
   const uteis = diasUteis(selectedMes, selectedAno);
   const total = diasDoMes(selectedMes, selectedAno);
 
@@ -1240,7 +1268,7 @@ function exportarGradeExcel() {
     const row = [f.matricula, f.nome, f.funcao, f.situacao];
     let fte = 0;
     for(let d=1;d<=total;d++){
-      const b = calcBadge(f.matricula,d,selectedMes,selectedAno,f.funcao,pres,[],[],f.dt_admissao,f.dt_demissao,f.situacao);
+      const b = calcBadge(f.matricula,d,selectedMes,selectedAno,f.funcao,pres,gradeData.abonos,gradeData.ausencias,f.dt_admissao,f.dt_demissao,f.situacao);
       row.push(b.txt);
       if(b.fte) fte += 1/uteis;
     }
@@ -1427,19 +1455,57 @@ function renderView() {
   else if(currentView === 'admin') renderAdminView();
 }
 
+/* ─── Popula seletor de meses ─── */
+function gerarOpcoesMes(selEl) {
+  const now = new Date();
+  selEl.innerHTML = '';
+  for (let i = 0; i < 10; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const m = d.getMonth() + 1;
+    const a = d.getFullYear();
+    const opt = document.createElement('option');
+    opt.value = `${m}-${a}`;
+    opt.textContent = `${nomeMes(m)} / ${a}`;
+    if (m === selectedMes && a === selectedAno) opt.selected = true;
+    selEl.appendChild(opt);
+  }
+}
+
+/* ─── Popula seletor de projetos ─── */
+function popularProjetos(selEl) {
+  selEl.innerHTML = '<option value="all">Todos os projetos</option>';
+  for (const p of projetos) {
+    const opt = document.createElement('option');
+    opt.value = p.codigo;
+    opt.textContent = `${p.codigo} — ${p.nome}`;
+    if (p.codigo === selectedProj) opt.selected = true;
+    selEl.appendChild(opt);
+  }
+}
+
 /* ─── Init ─── */
-(function() {
+(async function() {
   const token = localStorage.getItem('efetivo_token');
   const user  = (() => { try { return JSON.parse(localStorage.getItem('efetivo_user')); } catch { return null; } })();
   if (!token || !user) { window.location.href = '/'; return; }
   document.getElementById('user-email').textContent = user.email;
-  // Mostra botão sync só para admin
+
   const syncBtn = document.getElementById('btn-sync');
   if (syncBtn) syncBtn.style.display = user.perfil === 'admin' ? '' : 'none';
-  // Inicializa seletores do topbar com o mês atual
-  const selMes  = document.getElementById('sel-mes-top');
+
+  // Popula seletor de meses dinamicamente
+  const selMes = document.getElementById('sel-mes-top');
+  if (selMes) gerarOpcoesMes(selMes);
+
+  // Carrega projetos da API e popula dropdown
+  try {
+    projetos = await apiFetch('/api/projetos') || [];
+    syncStatus = await apiFetch('/api/sync-status');
+  } catch(e) { projetos = []; }
+
   const selProj = document.getElementById('sel-proj-top');
-  if (selMes) selMes.value = selectedMes;
+  if (selProj) popularProjetos(selProj);
+
   renderView();
 })();
 </script>

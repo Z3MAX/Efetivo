@@ -425,6 +425,49 @@ exports.handler = async (event) => {
     return ok({ ultima_sync: r?.ultima, total_funcionarios: Number(c?.total) })
   }
 
+  // ── GET /fte-resumo ──────────────────────────────────────────────────
+  if (path === '/fte-resumo' && method === 'GET') {
+    const mesN = parseInt(qs.mes) || new Date().getMonth() + 1
+    const anoN = parseInt(qs.ano) || new Date().getFullYear()
+    const de   = `${anoN}-${String(mesN).padStart(2,'0')}-01`
+    const diasMes = new Date(anoN, mesN, 0).getDate()
+    const ate  = `${anoN}-${String(mesN).padStart(2,'0')}-${String(diasMes).padStart(2,'0')}`
+
+    const [hcRows, presRows] = await Promise.all([
+      db`
+        SELECT codigo_projeto, COUNT(*) AS hc
+        FROM efetivo_funcionarios
+        WHERE codigo_projeto IS NOT NULL
+          AND (situacao IN ('Ativo','Ausente','Ferias')
+            OR (situacao = 'Demitido' AND dt_demissao BETWEEN ${de} AND ${ate}))
+        GROUP BY codigo_projeto
+        ORDER BY codigo_projeto
+      `,
+      db`
+        SELECT codigo_projeto, COUNT(*) AS presencas, COUNT(DISTINCT matricula) AS funcionarios_presentes
+        FROM efetivo_presenca
+        WHERE data BETWEEN ${de} AND ${ate}
+          AND codigo_projeto IS NOT NULL
+        GROUP BY codigo_projeto
+      `,
+    ])
+
+    const presMap = {}
+    for (const r of presRows) presMap[r.codigo_projeto] = r
+
+    const result = hcRows.map(h => {
+      const p = presMap[h.codigo_projeto] || { presencas: 0, funcionarios_presentes: 0 }
+      return {
+        codigo_projeto: h.codigo_projeto,
+        hc: Number(h.hc),
+        presencas: Number(p.presencas),
+        funcionarios_presentes: Number(p.funcionarios_presentes),
+      }
+    })
+
+    return ok(result)
+  }
+
   return err('Rota não encontrada', 404)
 }
 
