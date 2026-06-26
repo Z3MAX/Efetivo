@@ -1,23 +1,25 @@
 import { useEffect, useState } from 'react'
 import { api } from './lib/api'
 import Login from './pages/Login'
+import EfetivoGrade from './pages/EfetivoGrade'
 
 export default function App() {
   const [user, setUser] = useState(undefined)
 
   useEffect(() => {
-    const u = api.getUser()
-    if (u) {
-      window.location.href = '/app.html'
-    } else {
-      setUser(null)
-    }
+    setUser(api.getUser())
   }, [])
 
-  function onLogin() {
-    window.location.href = '/app.html'
+  function onLogin(u) {
+    setUser(u)
+  }
+
+  function onLogout() {
+    api.logout()
+    setUser(null)
   }
 
   if (user === undefined) return <div style={{ padding: 40 }}>Carregando...</div>
-  return <Login onLogin={onLogin} />
+  if (!user) return <Login onLogin={onLogin} />
+  return <EfetivoGrade user={user} onLogout={onLogout} />
 }
