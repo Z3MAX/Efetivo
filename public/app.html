@@ -742,13 +742,11 @@ async function renderDashboard() {
   try {
     const fteData = await apiFetch(`/api/fte-resumo?mes=${selectedMes}&ano=${selectedAno}`);
     if (fteData && fteData.length) {
-      const uteisMes = diasUteis(selectedMes, selectedAno);
       projs = fteData
         .filter(p => p.codigo_projeto && p.hc > 0)
         .map(p => {
           const proj = projetos.find(x => x.codigo === p.codigo_projeto);
-          const fte = Math.min(+(p.presencas / uteisMes).toFixed(1), p.hc);
-          return { cod: p.codigo_projeto, nome: proj?.nome || p.codigo_projeto, hc: p.hc, fte };
+          return { cod: p.codigo_projeto, nome: proj?.nome || p.codigo_projeto, hc: p.hc, fte: p.fte };
         })
         .filter(p => selectedProj === 'all' || p.cod === selectedProj)
         .sort((a, b) => b.hc - a.hc);

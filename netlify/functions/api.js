@@ -433,37 +433,41 @@ exports.handler = async (event) => {
     const diasMes = new Date(anoN, mesN, 0).getDate()
     const ate  = `${anoN}-${String(mesN).padStart(2,'0')}-${String(diasMes).padStart(2,'0')}`
 
-    const [hcRows, presRows] = await Promise.all([
-      db`
-        SELECT codigo_projeto, COUNT(*) AS hc
-        FROM efetivo_funcionarios
-        WHERE codigo_projeto IS NOT NULL
-          AND (situacao IN ('Ativo','Ausente','Ferias')
-            OR (situacao = 'Demitido' AND dt_demissao BETWEEN ${de} AND ${ate}))
-        GROUP BY codigo_projeto
-        ORDER BY codigo_projeto
-      `,
-      db`
-        SELECT codigo_projeto, COUNT(*) AS presencas, COUNT(DISTINCT matricula) AS funcionarios_presentes
+    // Calcula HC e FTE por projeto fazendo join correto (presencas dos funcionários do projeto)
+    const rows = await db`
+      SELECT
+        f.codigo_projeto,
+        COUNT(DISTINCT f.matricula)::int                          AS hc,
+        COALESCE(SUM(pc.dias_presente), 0)::int                   AS total_dias_presente
+      FROM efetivo_funcionarios f
+      LEFT JOIN (
+        SELECT matricula, COUNT(DISTINCT data) AS dias_presente
         FROM efetivo_presenca
         WHERE data BETWEEN ${de} AND ${ate}
-          AND codigo_projeto IS NOT NULL
-        GROUP BY codigo_projeto
-      `,
-    ])
+        GROUP BY matricula
+      ) pc ON pc.matricula = f.matricula
+      WHERE f.codigo_projeto IS NOT NULL
+        AND (f.situacao IN ('Ativo','Ausente','Ferias')
+          OR (f.situacao = 'Demitido' AND f.dt_demissao BETWEEN ${de} AND ${ate}))
+      GROUP BY f.codigo_projeto
+      ORDER BY f.codigo_projeto
+    `
 
-    const presMap = {}
-    for (const r of presRows) presMap[r.codigo_projeto] = r
+    // Dias úteis do mês (seg-sex)
+    let uteis = 0
+    const totalDias = new Date(anoN, mesN, 0).getDate()
+    for (let d = 1; d <= totalDias; d++) {
+      const wd = new Date(anoN, mesN - 1, d).getDay()
+      if (wd !== 0 && wd !== 6) uteis++
+    }
 
-    const result = hcRows.map(h => {
-      const p = presMap[h.codigo_projeto] || { presencas: 0, funcionarios_presentes: 0 }
-      return {
-        codigo_projeto: h.codigo_projeto,
-        hc: Number(h.hc),
-        presencas: Number(p.presencas),
-        funcionarios_presentes: Number(p.funcionarios_presentes),
-      }
-    })
+    const result = rows.map(r => ({
+      codigo_projeto: r.codigo_projeto,
+      hc: r.hc,
+      fte: uteis > 0 ? Math.min(+(r.total_dias_presente / uteis).toFixed(1), r.hc) : 0,
+      total_dias_presente: r.total_dias_presente,
+      dias_uteis: uteis,
+    }))
 
     return ok(result)
   }
