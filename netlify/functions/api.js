@@ -433,17 +433,27 @@ exports.handler = async (event) => {
     const diasMes = new Date(anoN, mesN, 0).getDate()
     const ate  = `${anoN}-${String(mesN).padStart(2,'0')}-${String(diasMes).padStart(2,'0')}`
 
-    // Calcula HC e FTE por projeto fazendo join correto (presencas dos funcionários do projeto)
+    // Dias úteis do mês (seg-sex)
+    let uteis = 0
+    const totalDias = new Date(anoN, mesN, 0).getDate()
+    for (let d = 1; d <= totalDias; d++) {
+      const wd = new Date(anoN, mesN - 1, d).getDay()
+      if (wd !== 0 && wd !== 6) uteis++
+    }
+
+    // HC por projeto + presencas SOMENTE em dias úteis (seg-sex) dos próprios funcionários do projeto
     const rows = await db`
       SELECT
         f.codigo_projeto,
-        COUNT(DISTINCT f.matricula)::int                          AS hc,
-        COALESCE(SUM(pc.dias_presente), 0)::int                   AS total_dias_presente
+        COUNT(DISTINCT f.matricula)::int                                       AS hc,
+        COALESCE(SUM(pc.dias_uteis_presente), 0)::int                          AS dias_uteis_com_ponto
       FROM efetivo_funcionarios f
       LEFT JOIN (
-        SELECT matricula, COUNT(DISTINCT data) AS dias_presente
+        SELECT matricula,
+               COUNT(DISTINCT data) AS dias_uteis_presente
         FROM efetivo_presenca
         WHERE data BETWEEN ${de} AND ${ate}
+          AND EXTRACT(DOW FROM data) BETWEEN 1 AND 5
         GROUP BY matricula
       ) pc ON pc.matricula = f.matricula
       WHERE f.codigo_projeto IS NOT NULL
@@ -453,21 +463,19 @@ exports.handler = async (event) => {
       ORDER BY f.codigo_projeto
     `
 
-    // Dias úteis do mês (seg-sex)
-    let uteis = 0
-    const totalDias = new Date(anoN, mesN, 0).getDate()
-    for (let d = 1; d <= totalDias; d++) {
-      const wd = new Date(anoN, mesN - 1, d).getDay()
-      if (wd !== 0 && wd !== 6) uteis++
-    }
-
-    const result = rows.map(r => ({
-      codigo_projeto: r.codigo_projeto,
-      hc: r.hc,
-      fte: uteis > 0 ? Math.min(+(r.total_dias_presente / uteis).toFixed(1), r.hc) : 0,
-      total_dias_presente: r.total_dias_presente,
-      dias_uteis: uteis,
-    }))
+    const result = rows.map(r => {
+      const maxDias = r.hc * uteis
+      const presRate = maxDias > 0 ? Math.min(+(r.dias_uteis_com_ponto / maxDias * 100).toFixed(1), 100) : 0
+      return {
+        codigo_projeto: r.codigo_projeto,
+        hc: r.hc,
+        // FTE aproximado: HC × taxa de presença com ponto (sem EL — dashboard apenas)
+        fte: +(r.hc * presRate / 100).toFixed(1),
+        pres_rate: presRate,
+        dias_uteis_com_ponto: r.dias_uteis_com_ponto,
+        dias_uteis: uteis,
+      }
+    })
 
     return ok(result)
   }
