@@ -433,7 +433,7 @@ exports.handler = async (event) => {
     const diasMes = new Date(anoN, mesN, 0).getDate()
     const ate  = `${anoN}-${String(mesN).padStart(2,'0')}-${String(diasMes).padStart(2,'0')}`
 
-    // Dias úteis do mês (seg-sex)
+    // Dias úteis e calendário do mês
     let uteis = 0
     const totalDias = new Date(anoN, mesN, 0).getDate()
     for (let d = 1; d <= totalDias; d++) {
@@ -441,39 +441,44 @@ exports.handler = async (event) => {
       if (wd !== 0 && wd !== 6) uteis++
     }
 
-    // HC por projeto + presencas SOMENTE em dias úteis (seg-sex) dos próprios funcionários do projeto
-    const rows = await db`
-      SELECT
-        f.codigo_projeto,
-        COUNT(DISTINCT f.matricula)::int                                       AS hc,
-        COALESCE(SUM(pc.dias_uteis_presente), 0)::int                          AS dias_uteis_com_ponto
-      FROM efetivo_funcionarios f
-      LEFT JOIN (
-        SELECT matricula,
-               COUNT(DISTINCT data) AS dias_uteis_presente
-        FROM efetivo_presenca
-        WHERE data BETWEEN ${de} AND ${ate}
-          AND EXTRACT(DOW FROM data) BETWEEN 1 AND 5
-        GROUP BY matricula
-      ) pc ON pc.matricula = f.matricula
-      WHERE f.codigo_projeto IS NOT NULL
-        AND (f.situacao IN ('Ativo','Ausente','Ferias')
-          OR (f.situacao = 'Demitido' AND f.dt_demissao BETWEEN ${de} AND ${ate}))
-      GROUP BY f.codigo_projeto
-      ORDER BY f.codigo_projeto
-    `
+    // Duas queries simples em paralelo (sem EXTRACT — mais rápido)
+    const [hcRows, presRows] = await Promise.all([
+      db`
+        SELECT codigo_projeto, COUNT(DISTINCT matricula)::int AS hc
+        FROM efetivo_funcionarios
+        WHERE codigo_projeto IS NOT NULL
+          AND (situacao IN ('Ativo','Ausente','Ferias')
+            OR (situacao = 'Demitido' AND dt_demissao BETWEEN ${de} AND ${ate}))
+        GROUP BY codigo_projeto
+        ORDER BY codigo_projeto
+      `,
+      db`
+        SELECT f.codigo_projeto, COUNT(p.matricula)::int AS n_presencas
+        FROM efetivo_presenca p
+        JOIN efetivo_funcionarios f ON p.matricula = f.matricula
+        WHERE p.data BETWEEN ${de} AND ${ate}
+          AND f.codigo_projeto IS NOT NULL
+        GROUP BY f.codigo_projeto
+      `,
+    ])
 
-    const result = rows.map(r => {
-      const maxDias = r.hc * uteis
-      const presRate = maxDias > 0 ? Math.min(+(r.dias_uteis_com_ponto / maxDias * 100).toFixed(1), 100) : 0
+    const presMap = {}
+    for (const r of presRows) presMap[r.codigo_projeto] = Number(r.n_presencas)
+
+    const result = hcRows.map(r => {
+      const hc = r.hc
+      // FTE: presencas / totalDias (inclui FDS como HE — regra de negócio RTT)
+      const n = presMap[r.codigo_projeto] || 0
+      const fte = Math.min(+(n / totalDias).toFixed(1), hc)
+      const presRate = hc > 0 ? Math.min(+(n / (hc * totalDias) * 100).toFixed(1), 100) : 0
       return {
         codigo_projeto: r.codigo_projeto,
-        hc: r.hc,
-        // FTE aproximado: HC × taxa de presença com ponto (sem EL — dashboard apenas)
-        fte: +(r.hc * presRate / 100).toFixed(1),
+        hc,
+        fte,
         pres_rate: presRate,
-        dias_uteis_com_ponto: r.dias_uteis_com_ponto,
+        n_presencas: n,
         dias_uteis: uteis,
+        total_dias: totalDias,
       }
     })
 
