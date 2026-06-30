@@ -340,7 +340,14 @@ exports.handler = async (event) => {
 
     const funcs = [...funcsMap.values()]
 
-    await db`UPDATE efetivo_sync_status SET detalhe=${JSON.stringify({mes,ano,etapa:'inserindo',funcionarios:funcs.length,presencas:presRows.length,abonos:abonosRows.length,t:elapsed()})}::jsonb WHERE id=1`
+    const datas = presRows.map(r => r.data).filter(Boolean).sort()
+    const minData = datas[0] || null
+    const maxData = datas[datas.length - 1] || null
+
+    await db`UPDATE efetivo_sync_status SET detalhe=${JSON.stringify({mes,ano,etapa:'inserindo',funcionarios:funcs.length,presencas:presRows.length,abonos:abonosRows.length,minData,maxData,t:elapsed()})}::jsonb WHERE id=1`
+
+    // Remove presença do período que vieram de sync anterior (preserva entradas via app)
+    await db`DELETE FROM efetivo_presenca WHERE data BETWEEN ${de} AND ${ate} AND usuario_input = 'sync_drive'`
 
     // Inserts em paralelo onde possível
     await bulkInsertFuncionarios(db, funcs)
