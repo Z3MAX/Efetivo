@@ -121,6 +121,8 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .btn-primary:hover { background: #0f4a8a; }
 .btn-outline { background: var(--bg-card); color: var(--text); border-color: var(--border); }
 .btn-outline:hover { background: var(--bg); }
+.btn-outline:disabled { opacity: 0.65; cursor: not-allowed; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .btn-ghost { background: transparent; color: var(--text-muted); border-color: transparent; }
 .btn-ghost:hover { background: var(--bg); color: var(--text); }
 .btn-danger { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
@@ -1468,17 +1470,25 @@ async function syncTotvs() {
   const efUser = (() => { try { return JSON.parse(localStorage.getItem('efetivo_user')); } catch { return null; } })();
   if (efUser?.perfil !== 'admin') { toast('Apenas administradores podem sincronizar', 'error'); return; }
 
-  toast('Sincronização iniciada… aguarde.');
-  // Chama a background function diretamente (redirect não preserva semântica de background)
+  const btn = document.getElementById('btn-sync');
+  const setSyncingState = (syncing) => {
+    if (!btn) return;
+    btn.disabled = syncing;
+    btn.innerHTML = syncing
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Sincronizando…`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Sincronizar`;
+  };
+
+  setSyncingState(true);
+
   await fetch('/.netlify/functions/sync-drive-background', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
     body: JSON.stringify({ mes: selectedMes, ano: selectedAno })
   }).catch(() => {});
 
-  // Polling até concluir (background function pode levar até ~2 min)
   let tentativas = 0;
-  const MAX = 300; // 300 × 3s = 15 min
+  const MAX = 300;
   const intervalo = setInterval(async () => {
     tentativas++;
     const st = await apiFetch('/api/sync-status');
@@ -1486,6 +1496,7 @@ async function syncTotvs() {
 
     if (sync?.status === 'ok') {
       clearInterval(intervalo);
+      setSyncingState(false);
       const d = sync.detalhe || {};
       toast(`Sincronizado: ${d.funcionarios ?? '?'} funcionários · ${d.presencas ?? '?'} presenças`, 'success');
       syncStatus = st;
@@ -1493,12 +1504,13 @@ async function syncTotvs() {
       else if (currentView === 'dashboard') renderDashboard();
     } else if (sync?.status === 'erro') {
       clearInterval(intervalo);
+      setSyncingState(false);
       toast(sync.detalhe?.erro || 'Erro na sincronização', 'error');
     } else if (tentativas >= MAX) {
       clearInterval(intervalo);
+      setSyncingState(false);
       toast('Sincronização demorou demais — verifique os logs do Netlify', 'error');
     }
-    // status === 'rodando' → continua aguardando
   }, 3000);
 }
 
