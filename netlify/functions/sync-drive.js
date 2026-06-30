@@ -318,7 +318,7 @@ exports.handler = async (event) => {
       presRows.push({
         matricula: mat, data,
         proj: mapProjeto(r['Cod Centro de Custo'], r['Desc Centro de Custo']),
-        fonte: (r['1E-Relogio']||r['1S-Relogio']) ? 'ponto' : 'manual',
+        fonte: 'ponto',
       })
     }
 
