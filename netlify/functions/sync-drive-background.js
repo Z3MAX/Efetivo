@@ -242,11 +242,15 @@ async function salvarStatus(db, status, dados) {
 
 exports.handler = async (event) => {
   // Netlify retorna 202 imediatamente — este handler roda em background
+  console.log('[sync-bg] iniciado', event.httpMethod)
 
   const usuario = verifyToken(event)
-  if (!usuario || usuario.perfil !== 'admin') return
+  if (!usuario) { console.log('[sync-bg] token inválido'); return }
+  if (usuario.perfil !== 'admin') { console.log('[sync-bg] não é admin:', usuario.perfil); return }
 
-  if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON || !process.env.GOOGLE_DRIVE_FOLDER_ID) return
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) { console.log('[sync-bg] sem GOOGLE_SERVICE_ACCOUNT_JSON'); return }
+  if (!process.env.GOOGLE_DRIVE_FOLDER_ID) { console.log('[sync-bg] sem GOOGLE_DRIVE_FOLDER_ID'); return }
+  if (!process.env.DATABASE_URL) { console.log('[sync-bg] sem DATABASE_URL'); return }
 
   const body = event.body ? JSON.parse(event.body) : {}
   const mes  = parseInt(body.mes) || new Date().getMonth() + 1
