@@ -121,32 +121,30 @@ exports.handler = async (event) => {
     let rows
     if (projeto && busca) {
       rows = await db`
-        SELECT DISTINCT f.matricula, f.nome, f.funcao, f.codigo_projeto,
+        SELECT DISTINCT ON (f.matricula) f.matricula, f.nome, f.funcao, f.codigo_projeto,
                         f.situacao, f.dt_admissao, f.dt_demissao, f.tipo_contrato
         FROM efetivo_funcionarios f
         WHERE (f.situacao IN ('Ativo','Ausente','Ferias')
           OR (f.situacao = 'Demitido' AND f.dt_demissao BETWEEN ${de} AND ${ate}))
-        AND (f.codigo_projeto = ${projeto}
-          OR f.matricula IN (
+        AND f.matricula IN (
             SELECT DISTINCT matricula FROM efetivo_presenca
             WHERE codigo_projeto = ${projeto} AND data BETWEEN ${de} AND ${ate}
-          ))
+          )
         AND (f.nome ILIKE ${buscaLike} OR f.matricula ILIKE ${buscaLike})
-        ORDER BY f.nome
+        ORDER BY f.matricula, f.nome
       `
     } else if (projeto) {
       rows = await db`
-        SELECT DISTINCT f.matricula, f.nome, f.funcao, f.codigo_projeto,
+        SELECT DISTINCT ON (f.matricula) f.matricula, f.nome, f.funcao, f.codigo_projeto,
                         f.situacao, f.dt_admissao, f.dt_demissao, f.tipo_contrato
         FROM efetivo_funcionarios f
         WHERE (f.situacao IN ('Ativo','Ausente','Ferias')
           OR (f.situacao = 'Demitido' AND f.dt_demissao BETWEEN ${de} AND ${ate}))
-        AND (f.codigo_projeto = ${projeto}
-          OR f.matricula IN (
+        AND f.matricula IN (
             SELECT DISTINCT matricula FROM efetivo_presenca
             WHERE codigo_projeto = ${projeto} AND data BETWEEN ${de} AND ${ate}
-          ))
-        ORDER BY f.nome
+          )
+        ORDER BY f.matricula, f.nome
       `
     } else if (busca) {
       rows = await db`
