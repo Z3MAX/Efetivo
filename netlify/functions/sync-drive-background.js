@@ -29,6 +29,7 @@ async function getGoogleAccessToken() {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${assertion}`,
+    signal: AbortSignal.timeout(30000),
   })
   const data = await res.json()
   if (!data.access_token) throw new Error(`Google Auth falhou: ${JSON.stringify(data)}`)
@@ -39,7 +40,7 @@ async function listarArquivos(token, folderId) {
   const q = encodeURIComponent(`'${folderId}' in parents and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false`)
   const res = await fetch(
     `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime+desc`,
-    { headers: { Authorization: `Bearer ${token}` } }
+    { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) }
   )
   const data = await res.json()
   return data.files || []
@@ -48,7 +49,7 @@ async function listarArquivos(token, folderId) {
 async function baixarArquivo(token, fileId) {
   const res = await fetch(
     `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-    { headers: { Authorization: `Bearer ${token}` } }
+    { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(300000) } // 5 min para arquivo grande
   )
   if (!res.ok) throw new Error(`Erro ao baixar arquivo: ${res.status}`)
   const ab = await res.arrayBuffer()
@@ -290,6 +291,7 @@ exports.handler = async (event) => {
   const elapsed = () => Math.round((Date.now() - t0) / 1000) + 's'
 
   try {
+    await db`UPDATE efetivo_sync_status SET detalhe=${JSON.stringify({mes,ano,etapa:'google-auth',t:elapsed()})}::jsonb WHERE id=1`
     const token = await getGoogleAccessToken()
     const files = await listarArquivos(token, process.env.GOOGLE_DRIVE_FOLDER_ID)
     if (!files.length) {
