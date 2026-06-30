@@ -86,13 +86,6 @@ exports.handler = async (event) => {
     return ok({ token, user: { email: user.email, nome: user.nome, perfil: user.perfil } })
   }
 
-  // ── Endpoint público temporário para debug ───────────────────────────
-  if (path === '/sync-ping' && method === 'GET') {
-    const db = getDb()
-    const [s] = await db`SELECT status, detalhe, iniciado_at, finalizado_at FROM efetivo_sync_status WHERE id=1`.catch(() => [null])
-    const [dup] = await db`SELECT COUNT(*) AS total, COUNT(DISTINCT matricula) AS unicos FROM efetivo_funcionarios`.catch(() => [null])
-    return ok({ sync: s || null, funcionarios: dup || null, ts: new Date().toISOString() })
-  }
 
   // ── Todas as demais rotas exigem autenticação ───────────────────────
   const usuario = verifyToken(event)

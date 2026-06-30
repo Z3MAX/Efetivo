@@ -242,23 +242,10 @@ async function salvarStatus(db, status, dados) {
 }
 
 exports.handler = async (event) => {
-  // Diagnóstico: escreve no banco em cada etapa
-  const dbDiag = neon(process.env.DATABASE_URL)
-  const setStatus = async (s, d) => {
-    await dbDiag`INSERT INTO efetivo_sync_status (id, status, detalhe, iniciado_at, finalizado_at) VALUES (1, ${s}, ${JSON.stringify(d)}::jsonb, NOW(), NOW()) ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, detalhe=EXCLUDED.detalhe, finalizado_at=NOW()`.catch(()=>{})
-  }
-
-  await setStatus('diag-iniciado', { method: event.httpMethod, hasAuth: !!(event.headers?.authorization || event.headers?.Authorization) })
-
   const usuario = verifyToken(event)
-  if (!usuario) { await setStatus('diag-sem-auth', {}); return }
-  if (usuario.perfil !== 'admin') { await setStatus('diag-nao-admin', { perfil: usuario.perfil }); return }
+  if (!usuario || usuario.perfil !== 'admin') return
 
-  await setStatus('diag-auth-ok', { perfil: usuario.perfil })
-
-  if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) { await setStatus('diag-sem-google-sa', {}); return }
-  if (!process.env.GOOGLE_DRIVE_FOLDER_ID) { await setStatus('diag-sem-folder', {}); return }
-  if (!process.env.DATABASE_URL) { await setStatus('diag-sem-db', {}); return }
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON || !process.env.GOOGLE_DRIVE_FOLDER_ID || !process.env.DATABASE_URL) return
 
   const body = event.body ? JSON.parse(event.body) : {}
   const mes  = parseInt(body.mes) || new Date().getMonth() + 1
