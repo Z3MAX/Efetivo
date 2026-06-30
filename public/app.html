@@ -562,8 +562,10 @@ async function apiPost(path, body) {
       body: JSON.stringify(body)
     });
     if (r.status === 401) { logout(); return null; }
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return { erro: `HTTP ${r.status} — resposta inválida do servidor` };
     return await r.json();
-  } catch(e) { return null; }
+  } catch(e) { return { erro: `Falha de rede: ${e.message}` }; }
 }
 
 async function apiDelete(path) {

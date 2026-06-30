@@ -12,6 +12,7 @@
 
 [functions."sync-drive"]
   included_files = []
+  timeout = 26
 
 [[redirects]]
   from = "/*"
