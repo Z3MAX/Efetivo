@@ -1478,7 +1478,7 @@ async function syncTotvs() {
 
   // Polling até concluir (background function pode levar até ~2 min)
   let tentativas = 0;
-  const MAX = 40; // 40 × 3s = 2 min
+  const MAX = 300; // 300 × 3s = 15 min
   const intervalo = setInterval(async () => {
     tentativas++;
     const st = await apiFetch('/api/sync-status');

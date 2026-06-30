@@ -286,6 +286,9 @@ exports.handler = async (event) => {
     ON CONFLICT (id) DO UPDATE SET status='rodando', detalhe=EXCLUDED.detalhe, iniciado_at=NOW(), finalizado_at=NULL
   `
 
+  const t0 = Date.now()
+  const elapsed = () => Math.round((Date.now() - t0) / 1000) + 's'
+
   try {
     const token = await getGoogleAccessToken()
     const files = await listarArquivos(token, process.env.GOOGLE_DRIVE_FOLDER_ID)
@@ -294,21 +297,27 @@ exports.handler = async (event) => {
       return
     }
     const arquivo = files[0]
+
+    await db`UPDATE efetivo_sync_status SET detalhe=${JSON.stringify({mes,ano,etapa:'baixando',arquivo:arquivo.name,t:elapsed()})}::jsonb WHERE id=1`
+
     const buf = await baixarArquivo(token, arquivo.id)
 
-    const wb = XLSX.read(buf, { type: 'buffer', bookFiles: true })
-    const ssBuf    = wb.files['xl/sharedStrings.xml']?.content
-    const sheetBuf = wb.files['xl/worksheets/sheet1.xml']?.content
-    if (!ssBuf || !sheetBuf) {
-      await db`UPDATE efetivo_sync_status SET status='erro', detalhe='{"erro":"Formato de arquivo inválido"}'::jsonb, finalizado_at=NOW() WHERE id=1`
+    await db`UPDATE efetivo_sync_status SET detalhe=${JSON.stringify({mes,ano,etapa:'parseando',tamanhoMB:Math.round(buf.length/1024/1024),t:elapsed()})}::jsonb WHERE id=1`
+
+    // Parser nativo do XLSX — muito mais rápido que o byte-scanner customizado
+    const wb = XLSX.read(buf, { type: 'buffer', cellText: false, cellDates: false })
+    if (!wb.SheetNames.length) {
+      await db`UPDATE efetivo_sync_status SET status='erro', detalhe='{"erro":"Planilha vazia"}'::jsonb, finalizado_at=NOW() WHERE id=1`
       return
     }
+    const sheet = wb.Sheets[wb.SheetNames[0]]
+    const allRows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true })
 
-    const strings = parseSharedStrings(ssBuf.toString('utf8'))
-    const allRows = parseSheetXML(sheetBuf, strings)
+    await db`UPDATE efetivo_sync_status SET detalhe=${JSON.stringify({mes,ano,etapa:'filtrando',totalLinhas:allRows.length,t:elapsed()})}::jsonb WHERE id=1`
+
     const rows = allRows.filter(r => {
       const d = parseDate(r['Data Apontamento'])
-      return !d || (d >= de && d <= ate)
+      return d && d >= de && d <= ate
     })
 
     const funcsMap = new Map()
@@ -341,14 +350,20 @@ exports.handler = async (event) => {
       })).filter(r => r.data)
 
     const funcs = [...funcsMap.values()]
+
+    await db`UPDATE efetivo_sync_status SET detalhe=${JSON.stringify({mes,ano,etapa:'inserindo',funcionarios:funcs.length,presencas:presRows.length,abonos:abonosRows.length,t:elapsed()})}::jsonb WHERE id=1`
+
+    // Inserts em paralelo onde possível
     await bulkInsertFuncionarios(db, funcs)
-    await bulkInsertPresencas(db, presRows)
-    await bulkInsertAbonos(db, abonosRows)
+    await Promise.all([
+      bulkInsertPresencas(db, presRows),
+      bulkInsertAbonos(db, abonosRows),
+    ])
 
     await db`
       UPDATE efetivo_sync_status SET
         status = 'ok',
-        detalhe = ${JSON.stringify({ arquivo: arquivo.name, modificado: arquivo.modifiedTime, funcionarios: funcs.length, presencas: presRows.length, abonos: abonosRows.length, mes, ano })}::jsonb,
+        detalhe = ${JSON.stringify({ arquivo: arquivo.name, modificado: arquivo.modifiedTime, funcionarios: funcs.length, presencas: presRows.length, abonos: abonosRows.length, mes, ano, tempo: elapsed() })}::jsonb,
         finalizado_at = NOW()
       WHERE id = 1
     `
@@ -357,7 +372,7 @@ exports.handler = async (event) => {
     await db`
       UPDATE efetivo_sync_status SET
         status = 'erro',
-        detalhe = ${JSON.stringify({ erro: e.message })}::jsonb,
+        detalhe = ${JSON.stringify({ erro: e.message, t: elapsed() })}::jsonb,
         finalizado_at = NOW()
       WHERE id = 1
     `.catch(() => {})
