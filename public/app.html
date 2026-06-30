@@ -1469,7 +1469,12 @@ async function syncTotvs() {
   if (efUser?.perfil !== 'admin') { toast('Apenas administradores podem sincronizar', 'error'); return; }
 
   toast('Sincronização iniciada… aguarde.');
-  await apiPost('/api/sync-drive', { mes: selectedMes, ano: selectedAno });
+  // Chama a background function diretamente (redirect não preserva semântica de background)
+  await fetch('/.netlify/functions/sync-drive-background', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+    body: JSON.stringify({ mes: selectedMes, ano: selectedAno })
+  }).catch(() => {});
 
   // Polling até concluir (background function pode levar até ~2 min)
   let tentativas = 0;
