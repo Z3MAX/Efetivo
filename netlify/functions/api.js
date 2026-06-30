@@ -174,11 +174,10 @@ exports.handler = async (event) => {
     let rows
     if (proj) {
       rows = await db`
-        SELECT p.matricula, p.data, p.codigo_projeto, p.fonte
-        FROM efetivo_presenca p
-        INNER JOIN efetivo_funcionarios f ON p.matricula = f.matricula
-        WHERE p.data BETWEEN ${de} AND ${ate}
-          AND f.codigo_projeto = ${proj}
+        SELECT matricula, data, codigo_projeto, fonte
+        FROM efetivo_presenca
+        WHERE data BETWEEN ${de} AND ${ate}
+          AND codigo_projeto = ${proj}
       `
     } else {
       rows = await db`
