@@ -275,7 +275,7 @@ exports.handler = async (event) => {
   // Marca início
   await db`
     INSERT INTO efetivo_sync_status (id, status, detalhe, iniciado_at, finalizado_at)
-    VALUES (1, 'rodando', '{"mes":${mes},"ano":${ano}}'::jsonb, NOW(), NULL)
+    VALUES (1, 'rodando', ${JSON.stringify({mes, ano})}::jsonb, NOW(), NULL)
     ON CONFLICT (id) DO UPDATE SET status='rodando', detalhe=EXCLUDED.detalhe, iniciado_at=NOW(), finalizado_at=NULL
   `
 
