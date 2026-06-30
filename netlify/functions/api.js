@@ -422,7 +422,8 @@ exports.handler = async (event) => {
   if (path === '/sync-status' && method === 'GET') {
     const [r] = await db`SELECT MAX(synced_at) AS ultima FROM efetivo_funcionarios`
     const [c] = await db`SELECT COUNT(*) AS total FROM efetivo_funcionarios`
-    return ok({ ultima_sync: r?.ultima, total_funcionarios: Number(c?.total) })
+    const [s] = await db`SELECT status, detalhe, iniciado_at, finalizado_at FROM efetivo_sync_status WHERE id=1`.catch(() => [null])
+    return ok({ ultima_sync: r?.ultima, total_funcionarios: Number(c?.total), sync: s || null })
   }
 
   // ── GET /fte-resumo ──────────────────────────────────────────────────

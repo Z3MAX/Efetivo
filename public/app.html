@@ -1467,15 +1467,34 @@ function salvarRelogio() {
 async function syncTotvs() {
   const efUser = (() => { try { return JSON.parse(localStorage.getItem('efetivo_user')); } catch { return null; } })();
   if (efUser?.perfil !== 'admin') { toast('Apenas administradores podem sincronizar', 'error'); return; }
-  toast('Baixando arquivo do Google Drive…');
-  const r = await apiPost('/api/sync-drive', { mes: selectedMes, ano: selectedAno });
-  if (r?.ok) {
-    toast(`Sincronizado: ${r.funcionarios} funcionários · ${r.presencas} presenças`, 'success');
-    if (currentView === 'grade') await loadGradeData();
-    else if (currentView === 'dashboard') renderDashboard();
-  } else {
-    toast(r?.erro || 'Erro na sincronização', 'error');
-  }
+
+  toast('Sincronização iniciada… aguarde.');
+  await apiPost('/api/sync-drive', { mes: selectedMes, ano: selectedAno });
+
+  // Polling até concluir (background function pode levar até ~2 min)
+  let tentativas = 0;
+  const MAX = 40; // 40 × 3s = 2 min
+  const intervalo = setInterval(async () => {
+    tentativas++;
+    const st = await apiFetch('/api/sync-status');
+    const sync = st?.sync;
+
+    if (sync?.status === 'ok') {
+      clearInterval(intervalo);
+      const d = sync.detalhe || {};
+      toast(`Sincronizado: ${d.funcionarios ?? '?'} funcionários · ${d.presencas ?? '?'} presenças`, 'success');
+      syncStatus = st;
+      if (currentView === 'grade') await loadGradeData();
+      else if (currentView === 'dashboard') renderDashboard();
+    } else if (sync?.status === 'erro') {
+      clearInterval(intervalo);
+      toast(sync.detalhe?.erro || 'Erro na sincronização', 'error');
+    } else if (tentativas >= MAX) {
+      clearInterval(intervalo);
+      toast('Sincronização demorou demais — verifique os logs do Netlify', 'error');
+    }
+    // status === 'rodando' → continua aguardando
+  }, 3000);
 }
 
 async function fecharMes() {

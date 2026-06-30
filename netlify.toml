@@ -1,6 +1,6 @@
 [[redirects]]
   from = "/api/sync-drive"
-  to = "/.netlify/functions/sync-drive"
+  to = "/.netlify/functions/sync-drive-background"
   status = 200
   force = true
 
